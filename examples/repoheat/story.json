@@ -3,11 +3,11 @@
   "problem": "GitHub shows a total, so you miss the repo that is taking off",
   "promise": "See which of your repos are heating up, in your terminal",
   "features": [
-    { "title": "Stars gained, repo by repo", "detail": "Stars in the last 2 and 7 days for every repo you own, plus a 30-day chart", "image": "examples/repoheat/social-preview.png" },
+    { "title": "Stars gained, repo by repo", "detail": "Stars in the last 2 and 7 days for every repo you own, plus a 30-day chart", "image": "examples/repoheat/dashboard.png" },
     { "title": "A viral score you can read", "detail": "0 to 100, with every point explained: momentum, acceleration, spike, freshness" },
     { "title": "Works on any public profile", "detail": "Point it at any user or organization, not just your own account" }
   ],
-  "install": "repoheat dashboard --user <your-username>",
+  "install": "repoheat dashboard --user ratatui",
   "url": "github.com/taufiquebuilds/repoheat",
   "stars": null
 }
