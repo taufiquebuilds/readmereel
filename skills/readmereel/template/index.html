@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en" data-composition-variables='__VARIABLES__'>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=__WIDTH__, height=__HEIGHT__" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: __WIDTH__px; height: __HEIGHT__px; overflow: hidden; background: #0b0d10; }
+      #root { width: 100%; height: 100%; position: relative; font-family: "Inter", sans-serif; color: #f4f5f7;
+        --accent: #22c55e; }
+      #bg { position: absolute; inset: 0;
+        background: radial-gradient(1200px 800px at 85% 10%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%), #0b0d10; }
+      .scene { position: absolute; inset: 0; display: flex; }
+      .mono { font-family: "JetBrains Mono", monospace; }
+
+      /* 1 Hook */
+      #s1 { align-items: center; justify-content: flex-start; }
+      #s1 .wrap { padding: 0 160px; }
+      #s1-text { font-weight: 900; font-size: 104px; line-height: 1.04; letter-spacing: -0.03em; max-width: 1500px; }
+      #s1-bar { height: 14px; width: 0; background: var(--accent); margin-top: 40px; border-radius: 7px; }
+
+      /* 2 Title */
+      #s2 { align-items: center; justify-content: center; text-align: center; flex-direction: column; }
+      #s2-logo { width: 140px; height: 140px; object-fit: contain; margin-bottom: 40px; }
+      #s2-name { font-weight: 900; font-size: 168px; letter-spacing: -0.04em; line-height: 1; }
+      #s2-promise { font-weight: 400; font-size: 52px; color: #b7bdc6; margin-top: 30px; max-width: 1400px; line-height: 1.25; }
+
+      /* 3-5 Features */
+      .feature { align-items: center; padding: 0 140px; gap: 90px; }
+      .feature .text { flex: 0 0 640px; }
+      .feature .num { font-weight: 900; font-size: 40px; color: var(--accent); }
+      .feature .title { font-weight: 900; font-size: 76px; line-height: 1.05; letter-spacing: -0.02em; margin-top: 18px; }
+      .feature .detail { font-size: 38px; line-height: 1.35; color: #b7bdc6; margin-top: 26px; }
+      .feature .frame { flex: 1; height: 760px; border-radius: 28px; background: #161a20; border: 2px solid #252b33;
+        overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 40px 120px rgba(0,0,0,0.5); }
+      .feature .dots { height: 52px; flex: none; display: flex; gap: 12px; align-items: center; padding: 0 22px; background: #1d2229; }
+      .feature .dots i { width: 14px; height: 14px; border-radius: 50%; background: #3a414b; display: block; }
+      .feature .shot { flex: 1; min-height: 0; width: 100%; object-fit: contain; background: #0f1216; }
+      .feature.noimg { justify-content: center; }
+      .feature.noimg .frame { display: none; }
+      .feature.noimg .text { flex: 0 1 1400px; text-align: center; }
+      .feature.noimg .title { font-size: 104px; }
+      .feature.noimg .detail { font-size: 50px; }
+
+      /* 6 Install + CTA */
+      #s6 { flex-direction: column; align-items: center; justify-content: center; gap: 60px; }
+      #s6-term { width: 1400px; border-radius: 26px; background: #161a20; border: 2px solid #252b33; overflow: hidden; }
+      #s6-term .dots { height: 52px; display: flex; gap: 12px; align-items: center; padding: 0 22px; background: #1d2229; }
+      #s6-term .dots i { width: 14px; height: 14px; border-radius: 50%; background: #3a414b; display: block; }
+      #s6-line { padding: 46px 50px; font-size: 44px; white-space: nowrap; display: flex; }
+      #s6-prompt { color: var(--accent); margin-right: 24px; }
+      #s6-cmd { display: inline-block; overflow: hidden; white-space: nowrap; width: 0; }
+      #s6-cursor { display: inline-block; width: 22px; background: var(--accent); margin-left: 6px; }
+      #s6-cta { text-align: center; }
+      #s6-star { display: inline-flex; align-items: center; gap: 18px; font-weight: 900; font-size: 64px;
+        background: var(--accent); color: #0b0d10; padding: 24px 46px; border-radius: 999px; }
+      #s6-stars { font-weight: 700; font-size: 40px; opacity: 0.8; }
+      #s6-url { font-size: 40px; color: #b7bdc6; margin-top: 30px; }
+      #s6-made { position: absolute; bottom: 60px; left: 0; right: 0; text-align: center; font-size: 28px; color: #6b7380; }
+
+      /* Tall layout (1080 x 1920) */
+      .tall #s1 .wrap { padding: 0 90px; }
+      .tall #s1-text { font-size: 96px; max-width: 900px; }
+      .tall #s2-name { font-size: 132px; }
+      .tall #s2-promise { font-size: 50px; max-width: 900px; }
+      .tall .feature { flex-direction: column; justify-content: center; padding: 0 80px; gap: 70px; }
+      .tall .feature .text { flex: none; width: 920px; }
+      .tall .feature .frame { flex: none; width: 920px; height: 900px; }
+      .tall .feature.noimg .text { width: 920px; }
+      .tall .feature.noimg .title { font-size: 96px; }
+      .tall #s6-term { width: 960px; }
+      .tall #s6-line { font-size: 30px; padding: 40px 36px; }
+      .tall #s6-cursor { width: 16px; }
+      .tall #s6-star { font-size: 56px; }
+      .tall #s6-url { font-size: 34px; }
+    </style>
+  </head>
+  <body class="__LAYOUT__">
+    <div id="root" data-composition-id="main" data-start="0" data-duration="25" data-width="__WIDTH__" data-height="__HEIGHT__">
+      <div id="bg" class="clip" data-start="0" data-duration="25" data-track-index="0"></div>
+
+      <section id="s1" class="scene clip" data-start="0" data-duration="3" data-track-index="1">
+        <div class="wrap">
+          <div id="s1-text" data-var-text="problem">Every AI deck looks the same</div>
+          <div id="s1-bar"></div>
+        </div>
+      </section>
+
+      <section id="s2" class="scene clip" data-start="3" data-duration="3" data-track-index="1">
+        <img id="s2-logo" data-var-src="logo" src="assets/blank.png" alt="" />
+        <div id="s2-name" data-var-text="name">readmereel</div>
+        <div id="s2-promise" data-var-text="promise">Turn your README into a launch video</div>
+      </section>
+
+      <section id="s3" class="scene feature clip" data-start="6" data-duration="4" data-track-index="1">
+        <div class="text">
+          <div class="num">01</div>
+          <div class="title" data-var-text="f1Title">Feature one</div>
+          <div class="detail" data-var-text="f1Detail">What it does for you</div>
+        </div>
+        <div class="frame"><div class="dots"><i></i><i></i><i></i></div><img class="shot" data-var-src="f1Image" src="assets/blank.png" alt="" /></div>
+      </section>
+
+      <section id="s4" class="scene feature clip" data-start="10" data-duration="4" data-track-index="1">
+        <div class="text">
+          <div class="num">02</div>
+          <div class="title" data-var-text="f2Title">Feature two</div>
+          <div class="detail" data-var-text="f2Detail">What it does for you</div>
+        </div>
+        <div class="frame"><div class="dots"><i></i><i></i><i></i></div><img class="shot" data-var-src="f2Image" src="assets/blank.png" alt="" /></div>
+      </section>
+
+      <section id="s5" class="scene feature clip" data-start="14" data-duration="4" data-track-index="1">
+        <div class="text">
+          <div class="num">03</div>
+          <div class="title" data-var-text="f3Title">Feature three</div>
+          <div class="detail" data-var-text="f3Detail">What it does for you</div>
+        </div>
+        <div class="frame"><div class="dots"><i></i><i></i><i></i></div><img class="shot" data-var-src="f3Image" src="assets/blank.png" alt="" /></div>
+      </section>
+
+      <section id="s6" class="scene clip" data-start="18" data-duration="7" data-track-index="1">
+        <div id="s6-term">
+          <div class="dots"><i></i><i></i><i></i></div>
+          <div id="s6-line" class="mono"><span id="s6-prompt">$</span><span id="s6-cmd" data-var-text="install">npx readmereel</span><span id="s6-cursor">&nbsp;</span></div>
+        </div>
+        <div id="s6-cta">
+          <div id="s6-star">★ Star on GitHub <span id="s6-stars"></span></div>
+          <div id="s6-url" data-var-text="url">github.com/you/repo</div>
+        </div>
+        <div id="s6-made">made with readmereel</div>
+      </section>
+      __MUSIC__
+    </div>
+    <script>
+      const v = window.__hyperframes.getVariables();
+      const root = document.getElementById("root");
+      root.style.setProperty("--accent", v.accent);
+      if (!v.logo) document.getElementById("s2-logo").style.display = "none";
+      ["f1Image", "f2Image", "f3Image"].forEach((k, i) => {
+        if (!v[k]) document.getElementById("s" + (i + 3)).classList.add("noimg");
+      });
+      if (v.stars >= 10) document.getElementById("s6-stars").textContent = "· " + Number(v.stars).toLocaleString("en-US");
+      if (!v.endCard) document.getElementById("s6-made").style.display = "none";
+      const chars = v.install.length;
+      // Shrink one-line text to fit its width (k = average glyph width in em), never below 28 px.
+      const wide = document.body.classList.contains("wide");
+      const fit = (max, width, n, k) => Math.max(28, Math.min(max, Math.floor(width / (n * k)))) + "px";
+      document.getElementById("s2-name").style.fontSize = fit(wide ? 168 : 132, wide ? 1600 : 920, v.name.length, 0.7);
+      document.getElementById("s6-line").style.fontSize = fit(wide ? 44 : 30, wide ? 1250 : 860, chars + 2, 0.62);
+      document.getElementById("s6-url").style.fontSize = fit(wide ? 40 : 34, wide ? 1600 : 960, v.url.length, 0.55);
+
+      const tl = gsap.timeline({ paused: true });
+      // 1 Hook
+      tl.fromTo("#s1-text", { opacity: 1, y: 24 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 0)
+        .to("#s1-bar", { width: 260, duration: 0.6, ease: "power2.out" }, 0.4)
+        .to("#s1 .wrap", { opacity: 0, y: -40, duration: 0.3, ease: "power2.in" }, 2.65);
+      // 2 Title
+      tl.fromTo("#s2-logo", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.5, ease: "back.out(1.6)" }, 3.0)
+        .fromTo("#s2-name", { opacity: 0, y: 50 }, { opacity: 1, y: 0, duration: 0.55, ease: "power3.out" }, 3.1)
+        .fromTo("#s2-promise", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, 3.45)
+        .to("#s2 > *", { opacity: 0, duration: 0.3 }, 5.65);
+      // 3-5 Features
+      [["#s3", 6], ["#s4", 10], ["#s5", 14]].forEach(([s, t]) => {
+        tl.fromTo(s + " .num", { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.4, ease: "power2.out" }, t)
+          .fromTo(s + " .title", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, t + 0.1)
+          .fromTo(s + " .detail", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, t + 0.3)
+          .fromTo(s + " .frame", { opacity: 0, y: 80, scale: 0.94 }, { opacity: 1, y: 0, scale: 1, duration: 0.7, ease: "power3.out" }, t + 0.2)
+          .to(s + " .shot", { scale: 1.04, duration: 3, ease: "none" }, t + 0.6)
+          .to(s + " > *", { opacity: 0, duration: 0.3 }, t + 3.65);
+      });
+      // 6 Install + CTA
+      tl.fromTo("#s6-term", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, 18)
+        .to("#s6-cmd", { width: chars + "ch", duration: Math.min(2.2, chars * 0.05), ease: "steps(" + chars + ")" }, 18.5)
+        .fromTo("#s6-cta", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.6, ease: "power3.out" }, 21.2)
+        .fromTo("#s6-star", { scale: 0.85 }, { scale: 1, duration: 0.6, ease: "back.out(1.8)" }, 21.2)
+        .fromTo("#s6-made", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 22.2)
+        .to("#s6-cursor", { opacity: 0, duration: 0.01, repeat: 9, yoyo: true, repeatDelay: 0.4 }, 20.8);
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>
