@@ -29,3 +29,21 @@ test("ffmpeg failure is an error", () => {
     /ffmpeg could not make the GIF: bad input/,
   );
 });
+
+test("a GIF under 8 MB needs only one ffmpeg call", () => {
+  const calls = [];
+  const final = makeGif("in.mp4", "out.gif", {
+    run: (cmd, args) => { calls.push(args); return { status: 0, stderr: "" }; },
+    size: () => 3 * 1024 * 1024,
+  });
+  assert.equal(calls.length, 1);
+  assert.equal(final, 3 * 1024 * 1024);
+});
+
+test("an ffmpeg spawn error names the cause, never null", () => {
+  const run = () => ({ status: null, stderr: null, error: new Error("spawn ffmpeg ENOENT") });
+  assert.throws(
+    () => makeGif("in.mp4", "out.gif", { run, size: () => 0 }),
+    (e) => /ffmpeg could not make the GIF: spawn ffmpeg ENOENT/.test(e.message) && !/null/.test(e.message),
+  );
+});

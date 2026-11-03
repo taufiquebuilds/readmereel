@@ -13,7 +13,7 @@ export function gifArgs(mp4, gif, seconds) {
 export function makeGif(mp4, gif, { run = spawnSync, size = (p) => statSync(p).size } = {}) {
   const once = (seconds) => {
     const result = run("ffmpeg", gifArgs(mp4, gif, seconds), { encoding: "utf8" });
-    if (result.status !== 0) throw new Error(`ffmpeg could not make the GIF: ${result.stderr}`);
+    if (result.status !== 0) throw new Error(`ffmpeg could not make the GIF: ${result.error?.message ?? result.stderr}`);
     return size(gif);
   };
   const bytes = once();
