@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "readmereel",
+  "owner": { "name": "taufiquebuilds", "url": "https://github.com/taufiquebuilds" },
+  "description": "Install readmereel as a Claude plugin.",
+  "plugins": [
+    {
+      "name": "readmereel",
+      "source": "./",
+      "description": "Turn your README into a launch video.",
+      "license": "MIT",
+      "keywords": ["video", "launch", "readme", "motion-design", "hyperframes", "gif"]
+    }
+  ]
+}
