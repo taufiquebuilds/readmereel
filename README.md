@@ -28,14 +28,14 @@ For Codex, Cursor and other agents that support skills, copy `skills/readmereel`
 
 ## Examples
 
-Four real repos. Each video was made from that repo's own README and screenshots.
+Four real repos.
 
 | | |
 | --- | --- |
 | [![agencyrecap launch video](examples/agencyrecap/poster.png)](https://github.com/taufiquebuilds/agencyrecap) | [![nopurple launch video](examples/nopurple/poster.png)](https://github.com/taufiquebuilds/nopurple) |
 | [![repoheat launch video](examples/repoheat/poster.png)](https://github.com/taufiquebuilds/repoheat) | [![launchday launch video](examples/launchday/poster.png)](https://github.com/taufiquebuilds/launchday) |
 
-Each folder in [`examples/`](examples) has the `story.json` and the screenshots the video was made from, plus the GIF. The MP4s are on the release page.
+Each video was made from the repo's README and any screenshots. Each folder in [`examples/`](examples) has the `story.json` and the screenshots it was made from, plus the GIF. The MP4s are on the [latest release](https://github.com/taufiquebuilds/readmereel/releases/latest).
 
 ## What you get
 
@@ -64,19 +64,26 @@ Every claim in the video has to be something the repo shows. If a feature has no
 
 - Node 22 or newer
 - ffmpeg
-- Chrome is fetched by HyperFrames on first run
+- Internet access: HyperFrames comes from npm, fetches Chrome on first run, and the video loads Google Fonts and GSAP
+- macOS or Linux (Windows is not supported yet)
 
-A render takes 1 to 3 minutes. If something is missing, the script says how to install it.
+A render takes 3 to 10 minutes. If something is missing, the script says how to install it. readmereel turns HyperFrames telemetry off (`HYPERFRAMES_NO_TELEMETRY=1`).
 
 ## Edit and re-render
 
-Your agent writes `launch-video/story.json`. To change the words, edit it and run the same command again:
+Your agent writes `launch-video/story.json`. To change the words, edit it and run the same command again from your repo root:
 
 ```sh
-node skills/readmereel/scripts/render.mjs launch-video/story.json
+node <skill folder>/scripts/render.mjs launch-video/story.json
 ```
 
-The script checks the story first and tells you which text is too long. To change the scenes themselves, open `launch-video/wide` in HyperFrames Studio with `npx hyperframes preview`.
+`<skill folder>` is the folder that holds `SKILL.md`. For the Claude plugin it is inside the installed plugin; for other agents it is wherever you copied `skills/readmereel`. Your agent prints the exact command when it finishes.
+
+The script checks the story first and tells you which text is too long. `wide/` and `tall/` are rebuilt on every run, so to change the scenes themselves copy one elsewhere first, then open it in HyperFrames Studio:
+
+```sh
+cd launch-video-copy/wide && npx --yes hyperframes@0.9.9 preview
+```
 
 ## How it works
 

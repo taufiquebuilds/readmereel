@@ -1361,11 +1361,11 @@ git commit -m "Add CI that runs unit and render tests" -m "Co-Authored-By: Claud
 **Files:**
 - Create: `examples/agencyrecap/`, `examples/nopurple/`, `examples/repoheat/`, `examples/launchday/` (each: `story.json`, copied images, `video.gif`, `poster.png`), `README.md`, `CHANGELOG.md`
 
-The four source repos are on this machine:
-- `/Users/taufiquekhan/client repo` (agencyrecap)
-- `/Users/taufiquekhan/gihub repo public/nopurple`
-- `/Users/taufiquekhan/gihub repo public/repoheat`
-- `/Users/taufiquekhan/gihub repo public/launchday`
+The four source repos are checked out locally:
+- the agencyrecap repo
+- the nopurple repo
+- the repoheat repo
+- the launchday repo
 
 - [ ] **Step 1: Write each example story by following SKILL.md**
 

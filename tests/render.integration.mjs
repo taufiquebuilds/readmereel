@@ -13,10 +13,12 @@ import { tmpDir, validStory } from "./helpers.mjs";
 
 const RENDER = resolve(dirname(fileURLToPath(import.meta.url)), "../skills/readmereel/scripts/render.mjs");
 
-// A scratch folder that is removed when the test ends.
+// A scratch folder that is removed when the test ends. CI keeps them so a failed run's logs can be uploaded.
 function scratch(t) {
   const dir = tmpDir();
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  t.after(() => {
+    if (!process.env.CI) rmSync(dir, { recursive: true, force: true });
+  });
   return dir;
 }
 

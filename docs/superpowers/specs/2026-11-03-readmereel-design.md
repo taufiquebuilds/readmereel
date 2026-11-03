@@ -1,7 +1,7 @@
 # readmereel: design
 
 Date: 2026-11-03
-Status: approved design, waiting for spec review
+Status: approved, implemented in v0.1.0
 
 ## Goal
 
@@ -21,7 +21,7 @@ v1 is done when the skill, run by Claude Code on each of four real repos (nopurp
 | Scenes | Fixed templates filled from data; the agent does not write animation code |
 | Branding | Small "made with readmereel" line on the last scene, on by default, removable |
 | Licence | MIT |
-| Repo | `taufiquebuilds/readmereel`, built in `~/gihub repo public/readmereel` |
+| Repo | `taufiquebuilds/readmereel` |
 
 ## Not in v1
 
