@@ -32,7 +32,7 @@ Voiceover or TTS, AI video-generation models, a hosted web app, screen recording
 1. Install the skill (plugin marketplace for Claude Code; copy the skill folder for other agents).
 2. In a repo, ask: "make a launch video for this repo". Optional: "use music.mp3", "no end card".
 3. The agent reads the repo, writes `launch-video/story.json`, shows the user the six scene texts and waits for "ok" or edits.
-4. The agent runs the render script. About 1–3 minutes later `launch-video/` holds both MP4s and the GIF.
+4. The agent runs the render script. About 3–10 minutes later `launch-video/` holds both MP4s and the GIF.
 5. The user can edit `story.json` and run the render script again without the agent.
 
 ## The story

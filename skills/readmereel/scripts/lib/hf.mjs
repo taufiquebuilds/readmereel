@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { DURATION } from "./build.mjs";
 
 export const HF = ["--yes", "hyperframes@0.9.9"];
 
@@ -26,11 +27,18 @@ function parseReport(stdout) {
   }
 }
 
-// npx runs from the temp dir, never inside the project: npm reads the nearest package.json and .npmrc above its cwd.
+// npx runs from a private folder inside the temp dir, never inside the project: npm reads the nearest package.json and
+// .npmrc above its cwd. A shared /tmp is not safe either (/tmp/.npmrc, /tmp/node_modules), so make one folder per process.
+let npxDir;
+function npxCwd() {
+  npxDir ??= mkdtempSync(join(tmpdir(), "readmereel-npx-"));
+  return npxDir;
+}
+
 export function runHf(args, { log, run = spawnSync, timeout } = {}) {
   const full = [...HF, ...args];
   const result = run("npx", full, {
-    cwd: tmpdir(),
+    cwd: npxCwd(),
     env: { ...process.env, HYPERFRAMES_NO_TELEMETRY: "1" },
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
@@ -58,8 +66,8 @@ export function ensureBrowser({ log, run } = {}) {
 }
 
 // HyperFrames downgrades a layout finding seen in only one sample to "info", which this gate ignores. The default
-// 9 samples leave most 3-4 second scenes with a single sample, so sample every second: each scene gets 3 or more.
-export const CHECK_SAMPLES = 25;
+// 9 samples leave most 3-4 second scenes with a single sample, so sample every second of the video (one sample per second): each scene gets 3 or more.
+export const CHECK_SAMPLES = DURATION;
 
 export function checkProject(projectDir, { log, run } = {}) {
   const result = runHf(["check", "--json", "--samples", String(CHECK_SAMPLES), resolve(projectDir)], { log, run, timeout: TIMEOUTS.check });

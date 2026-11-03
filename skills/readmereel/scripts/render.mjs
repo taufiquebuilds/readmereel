@@ -57,7 +57,7 @@ export function main(argv = process.argv.slice(2), { cwd = process.cwd() } = {})
       errors.forEach((e) => console.error(`  - ${e}`));
       return 1;
     }
-    // Outputs from an earlier run must not survive a failed one.
+    // Past the tool and story checks, outputs from an earlier run must not survive a failed one.
     for (const name of [LAYOUTS.wide.video, LAYOUTS.tall.video, "video.gif"]) rmSync(join(outDir, name), { force: true });
     const log = join(outDir, "render.log");
     writeFileSync(log, "");

@@ -49,7 +49,7 @@ Example:
 ```json
 {
   "name": "agencyrecap",
-  "problem": "Client reporting tools charge you more for every client you win",
+  "problem": "Monthly client reports, built and sent by hand",
   "promise": "Monthly client reports that send themselves",
   "features": [
     { "title": "Branded PDF every month", "detail": "Your logo and colour, emailed to each client on the day you pick", "image": "docs/images/report-page-2.png" },

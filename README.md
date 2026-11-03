@@ -45,7 +45,7 @@ Each video was made from the repo's README and any screenshots. Each folder in [
 | `video-9x16.mp4` | 1080×1920 | X, LinkedIn, Instagram Reels, TikTok |
 | `video.gif` | 960 px wide | The top of your README |
 
-You also get `wide/` and `tall/`, two HyperFrames projects you can open and edit.
+You also get `wide/` and `tall/`, two HyperFrames projects you can open and edit (copy the folder first: it is rebuilt on every run).
 
 ## The six scenes
 

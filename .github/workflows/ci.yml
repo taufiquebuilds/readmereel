@@ -26,6 +26,5 @@ jobs:
         with:
           name: render-logs
           path: |
-            /tmp/**/render.log
-            **/check.log
+            /tmp/readmereel-*/**/*.log
           if-no-files-found: ignore

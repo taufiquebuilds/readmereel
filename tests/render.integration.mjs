@@ -90,7 +90,7 @@ test("the layout check can fail: an overflowing element is reported", (t) => {
   assert.notEqual(broken, readFileSync(file, "utf8"), "the test could not inject the overflowing element");
   writeFileSync(file, broken);
   const problems = checkProject(dir, { log });
-  assert.ok(problems.length >= 1, `the overflow was not reported; see ${log}`);
+  assert.ok(problems.some((p) => p.includes("#s1-bad")), `the overflow of #s1-bad was not reported (got ${JSON.stringify(problems)}); see ${log}`);
 });
 
 test("a bad story renders nothing and says why", (t) => {

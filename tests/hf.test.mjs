@@ -1,9 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { checkProject, ensureBrowser, HF, renderProject, runHf } from "../skills/readmereel/scripts/lib/hf.mjs";
+import { basename, dirname, join, resolve } from "node:path";
+import { DURATION } from "../skills/readmereel/scripts/lib/build.mjs";
+import { CHECK_SAMPLES, checkProject, ensureBrowser, HF, renderProject, runHf } from "../skills/readmereel/scripts/lib/hf.mjs";
 import { tmpDir } from "./helpers.mjs";
 
 function fakeRun(result, calls = []) {
@@ -117,18 +118,26 @@ test("render and browser setup report the spawn error, and omit a missing log", 
   assert.throws(() => ensureBrowser({ run: fakeRun({ status: 1 }) }), (e) => e.message === "Could not set up Chrome for rendering");
 });
 
-test("npx never runs inside the project: it runs from the temp dir with telemetry off", () => {
+test("npx never runs inside the project: it runs from one private folder in the temp dir with telemetry off", () => {
   const calls = [];
   const run = fakeRun({ stdout: JSON.stringify({ ok: true }) }, calls);
   ensureBrowser({ run: fakeRun({}, calls) });
   checkProject("/some/repo/wide", { log: logIn(), run });
   renderProject("/some/repo/wide", "/some/repo/v.mp4", { run: fakeRun({}, calls) });
   assert.equal(calls.length, 3);
+  const cwd = calls[0].cwd;
+  assert.ok(statSync(cwd).isDirectory());
+  assert.equal(dirname(cwd), resolve(tmpdir()));
+  assert.ok(basename(cwd).startsWith("readmereel-npx-"), cwd);
   for (const c of calls) {
-    assert.equal(c.cwd, tmpdir());
+    assert.equal(c.cwd, cwd, "every call reuses the same folder");
     assert.equal(c.env.HYPERFRAMES_NO_TELEMETRY, "1");
     assert.equal(c.env.PATH, process.env.PATH);
   }
+});
+
+test("the check takes at least one sample per second of video", () => {
+  assert.ok(CHECK_SAMPLES >= DURATION, `${CHECK_SAMPLES} samples cannot cover ${DURATION} s`);
 });
 
 test("the project goes in as the trailing DIR argument, and the output path is absolute", () => {
