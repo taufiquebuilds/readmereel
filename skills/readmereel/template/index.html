@@ -13,6 +13,9 @@
         background: radial-gradient(1200px 800px at 85% 10%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%), #0b0d10; }
       .scene { position: absolute; inset: 0; display: flex; }
       .mono { font-family: "JetBrains Mono", monospace; }
+      /* Wrapped copy: balance the lines, and break a too-long word instead of spilling out. */
+      #s1-text, #s2-promise, .feature .title, .feature .detail { text-wrap: balance; overflow-wrap: anywhere; }
+      #s2-name { overflow-wrap: anywhere; }
 
       /* 1 Hook */
       #s1 { align-items: center; justify-content: flex-start; }

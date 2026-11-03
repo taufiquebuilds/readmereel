@@ -84,3 +84,11 @@ test("unknown fields are reported so typos are caught", () => {
   story.promis = "typo";
   assert.deepEqual(validateStory(story, tmpDir()), ["promis: unknown field"]);
 });
+
+test("a url ending in .git is rejected", () => {
+  const story = validStory();
+  story.url = "github.com/taufiquebuilds/agencyrecap.git";
+  assert.deepEqual(validateStory(story, tmpDir()), ["url: drop the .git ending"]);
+  story.url = "github.com/taufiquebuilds/agencyrecap";
+  assert.deepEqual(validateStory(story, tmpDir()), []);
+});

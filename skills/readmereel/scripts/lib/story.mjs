@@ -46,6 +46,7 @@ export function validateStory(story, baseDir) {
   }
   text(errors, "install", story.install, LIMITS.install);
   if (typeof story.url !== "string" || !URL_LIKE.test(story.url)) errors.push("url: must be a web address like github.com/you/repo");
+  else if (/\.git$/i.test(story.url)) errors.push("url: drop the .git ending");
   else if (story.url.length > LIMITS.url) errors.push(`url: ${story.url.length} characters, the limit is ${LIMITS.url}`);
   if (story.stars !== undefined && story.stars !== null && !(Number.isInteger(story.stars) && story.stars >= 0)) {
     errors.push("stars: must be a whole number or null");

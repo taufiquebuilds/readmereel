@@ -1,7 +1,7 @@
 #!/usr/bin/env node
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 import { buildProject, LAYOUTS } from "./lib/build.mjs";
 import { GIF, makeGif } from "./lib/gif.mjs";
 import { checkProject, ensureBrowser, renderProject } from "./lib/hf.mjs";
@@ -14,6 +14,29 @@ function readStory(path) {
   } catch (err) {
     throw new Error(err.code === "ENOENT" ? `No story file at ${path}` : `${path} is not valid JSON: ${err.message}`);
   }
+}
+
+const FIELDS = {
+  "#s1-text": "problem",
+  "#s2-name": "name",
+  "#s2-promise": "promise",
+  "#s6-cmd": "install",
+  "#s6-line": "install",
+  "#s6-url": "url",
+};
+[["#s3", 1], ["#s4", 2], ["#s5", 3]].forEach(([scene, n]) => {
+  FIELDS[`${scene} .title`] = `features[${n}].title`;
+  FIELDS[`${scene} .detail`] = `features[${n}].detail`;
+  // HyperFrames names an element without an id by its position: the title is the 2nd div in .text, the detail the 3rd.
+  FIELDS[`${scene} > div:nth-of-type(1) > div:nth-of-type(2)`] = `features[${n}].title`;
+  FIELDS[`${scene} > div:nth-of-type(1) > div:nth-of-type(3)`] = `features[${n}].detail`;
+});
+
+// Layout problems end with "(selector)"; say which story field that element shows.
+export function explainProblem(problem) {
+  const flat = problem.replace(/\s+/g, " ");
+  const selector = Object.keys(FIELDS).find((key) => flat.endsWith(` (${key})`));
+  return selector ? `${problem} -> story field: ${FIELDS[selector]}` : problem;
 }
 
 export function main(argv = process.argv.slice(2), { cwd = process.cwd() } = {}) {
@@ -34,20 +57,27 @@ export function main(argv = process.argv.slice(2), { cwd = process.cwd() } = {})
       errors.forEach((e) => console.error(`  - ${e}`));
       return 1;
     }
+    // Outputs from an earlier run must not survive a failed one.
+    for (const name of [LAYOUTS.wide.video, LAYOUTS.tall.video, "video.gif"]) rmSync(join(outDir, name), { force: true });
     const log = join(outDir, "render.log");
     writeFileSync(log, "");
     console.log("Getting Chrome ready…");
     ensureBrowser({ log });
+    const dirs = {};
+    let failed = false;
     for (const layout of Object.keys(LAYOUTS)) {
-      const dir = buildProject(story, layout, { baseDir: cwd, outDir });
-      const problems = checkProject(dir, { log });
+      dirs[layout] = buildProject(story, layout, { baseDir: cwd, outDir });
+      const problems = checkProject(dirs[layout], { log });
       if (problems.length) {
+        failed = true;
         console.error(`✗ The ${layout} video has layout problems:`);
-        problems.forEach((p) => console.error(`  - ${p}`));
-        return 1;
+        problems.forEach((p) => console.error(`  - ${explainProblem(p)}`));
       }
+    }
+    if (failed) return 1;
+    for (const layout of Object.keys(LAYOUTS)) {
       console.log(`Rendering ${LAYOUTS[layout].video}…`);
-      renderProject(dir, join(outDir, LAYOUTS[layout].video), { log, quality });
+      renderProject(dirs[layout], join(outDir, LAYOUTS[layout].video), { log, quality });
     }
     const gif = join(outDir, "video.gif");
     const bytes = makeGif(join(outDir, LAYOUTS.wide.video), gif);
@@ -60,6 +90,12 @@ export function main(argv = process.argv.slice(2), { cwd = process.cwd() } = {})
   }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  process.exit(main());
-}
+// Compare real paths so running through a symlinked skill folder still works.
+const isMain = (() => {
+  try {
+    return Boolean(process.argv[1]) && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+})();
+if (isMain) process.exit(main());

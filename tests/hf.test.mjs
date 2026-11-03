@@ -1,13 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { checkProject, ensureBrowser, HF, renderProject, runHf } from "../skills/readmereel/scripts/lib/hf.mjs";
 import { tmpDir } from "./helpers.mjs";
 
 function fakeRun(result, calls = []) {
   return (cmd, args, opts) => {
-    calls.push({ cmd, args, cwd: opts.cwd });
+    calls.push({ cmd, args, cwd: opts.cwd, env: opts.env, timeout: opts.timeout });
     return { status: 0, stdout: "", stderr: "", ...result };
   };
 }
@@ -15,9 +16,10 @@ function fakeRun(result, calls = []) {
 test("runs the pinned HyperFrames version and logs the output", () => {
   const log = join(tmpDir(), "render.log");
   const calls = [];
-  runHf(["info"], { cwd: "/p", log, run: fakeRun({ stdout: "hello" }, calls) });
+  runHf(["info"], { log, run: fakeRun({ stdout: "hello" }, calls) });
   assert.deepEqual(HF, ["--yes", "hyperframes@0.9.9"]);
-  assert.deepEqual(calls[0], { cmd: "npx", args: ["--yes", "hyperframes@0.9.9", "info"], cwd: "/p" });
+  assert.equal(calls[0].cmd, "npx");
+  assert.deepEqual(calls[0].args, ["--yes", "hyperframes@0.9.9", "info"]);
   assert.match(readFileSync(log, "utf8"), /\$ npx --yes hyperframes@0\.9\.9 info\nhello/);
 });
 
@@ -96,7 +98,7 @@ test("render passes quality and output, and fails loudly", () => {
   const calls = [];
   const log = logIn();
   renderProject("/p", "/out/v.mp4", { log, quality: "draft", run: fakeRun({}, calls) });
-  assert.deepEqual(calls[0].args.slice(2), ["render", "--quality", "draft", "--quiet", "--output", "/out/v.mp4"]);
+  assert.deepEqual(calls[0].args.slice(2), ["render", "--quality", "draft", "--quiet", "--output", "/out/v.mp4", "/p"]);
   assert.throws(
     () => renderProject("/p", "/out/v.mp4", { log, run: fakeRun({ status: 1 }) }),
     new RegExp(`Render failed for /p\\. See ${esc(log)}`),
@@ -113,4 +115,58 @@ test("render and browser setup report the spawn error, and omit a missing log", 
   assert.throws(() => renderProject("/p", "/o.mp4", { run }), (e) => e.message === "Render failed for /p: spawn npx ENOENT");
   assert.throws(() => ensureBrowser({ run }), (e) => e.message === "Could not set up Chrome for rendering: spawn npx ENOENT");
   assert.throws(() => ensureBrowser({ run: fakeRun({ status: 1 }) }), (e) => e.message === "Could not set up Chrome for rendering");
+});
+
+test("npx never runs inside the project: it runs from the temp dir with telemetry off", () => {
+  const calls = [];
+  const run = fakeRun({ stdout: JSON.stringify({ ok: true }) }, calls);
+  ensureBrowser({ run: fakeRun({}, calls) });
+  checkProject("/some/repo/wide", { log: logIn(), run });
+  renderProject("/some/repo/wide", "/some/repo/v.mp4", { run: fakeRun({}, calls) });
+  assert.equal(calls.length, 3);
+  for (const c of calls) {
+    assert.equal(c.cwd, tmpdir());
+    assert.equal(c.env.HYPERFRAMES_NO_TELEMETRY, "1");
+    assert.equal(c.env.PATH, process.env.PATH);
+  }
+});
+
+test("the project goes in as the trailing DIR argument, and the output path is absolute", () => {
+  const calls = [];
+  checkProject("/some/repo/wide", { log: logIn(), run: fakeRun({ stdout: JSON.stringify({ ok: true }) }, calls) });
+  assert.deepEqual(calls[0].args.slice(2), ["check", "--json", "--samples", "25", "/some/repo/wide"]);
+  renderProject("/some/repo/wide", "/out/v.mp4", { quality: "draft", run: fakeRun({}, calls) });
+  assert.deepEqual(calls[1].args.slice(2), ["render", "--quality", "draft", "--quiet", "--output", "/out/v.mp4", "/some/repo/wide"]);
+  renderProject("rel/wide", "rel/v.mp4", { run: fakeRun({}, calls) });
+  assert.deepEqual(calls[2].args.slice(-3), ["--output", resolve("rel/v.mp4"), resolve("rel/wide")]);
+});
+
+test("check, render and browser setup each get a timeout", () => {
+  const calls = [];
+  ensureBrowser({ run: fakeRun({}, calls) });
+  checkProject("/p", { log: logIn(), run: fakeRun({ stdout: JSON.stringify({ ok: true }) }, calls) });
+  renderProject("/p", "/o.mp4", { run: fakeRun({}, calls) });
+  assert.deepEqual(calls.map((c) => c.timeout), [10 * 60_000, 5 * 60_000, 20 * 60_000]);
+});
+
+test("a timeout is reported in minutes by check, render and browser setup", () => {
+  const timedOut = { status: null, stdout: null, stderr: null,
+    error: Object.assign(new Error("spawnSync npx ETIMEDOUT"), { code: "ETIMEDOUT" }) };
+  const log = logIn();
+  assert.throws(() => checkProject("/p", { log, run: fakeRun(timedOut) }),
+    new RegExp(`Could not run HyperFrames check: timed out after 5 minutes\\. See ${esc(log)}`));
+  assert.throws(() => renderProject("/p", "/o.mp4", { run: fakeRun(timedOut) }),
+    (e) => e.message === "Render failed for /p: timed out after 20 minutes");
+  assert.throws(() => ensureBrowser({ run: fakeRun(timedOut) }),
+    (e) => e.message === "Could not set up Chrome for rendering: timed out after 10 minutes");
+  assert.match(readFileSync(log, "utf8"), /error: spawnSync npx ETIMEDOUT/);
+});
+
+test("a layout problem names the element it is about", () => {
+  const report = { ok: false, layout: { findings: [
+    { severity: "error", code: "text_overflow", message: "text spills out", selector: "#s1-text" },
+    { severity: "error", code: "other", message: "no selector here" },
+  ] } };
+  const problems = checkProject("/p", { log: logIn(), run: fakeRun({ stdout: JSON.stringify(report), status: 1 }) });
+  assert.deepEqual(problems, ["layout: text_overflow: text spills out (#s1-text)", "layout: other: no selector here"]);
 });
