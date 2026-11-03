@@ -1,0 +1,13 @@
+{
+  "name": "readmereel",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Turn your README into a launch video.",
+  "license": "MIT",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "test:render": "node --test --test-timeout=900000 tests/render.integration.mjs"
+  }
+}

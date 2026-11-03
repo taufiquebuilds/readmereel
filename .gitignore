@@ -1,0 +1,9 @@
+node_modules/
+.DS_Store
+launch-video/
+examples/*/wide/
+examples/*/tall/
+examples/*/*.mp4
+examples/*/render.log
+.hyperframes/
+renders/
