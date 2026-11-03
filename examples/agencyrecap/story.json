@@ -1,0 +1,14 @@
+{
+  "name": "agencyrecap",
+  "problem": "Monthly client reports are slow to build and easy to forget",
+  "promise": "Monthly client reports that send themselves",
+  "features": [
+    { "title": "Branded PDF every month", "detail": "Your logo and colour, emailed to each client on the day you pick", "image": "examples/agencyrecap/report-page-2.png" },
+    { "title": "One dashboard for every client", "detail": "See which reports went out, then preview or send now in one click", "image": "examples/agencyrecap/dashboard.png" },
+    { "title": "Never sends the same month twice", "detail": "If Google fails, the report is held and retried daily, then you get an email" }
+  ],
+  "install": "docker compose up -d",
+  "url": "github.com/taufiquebuilds/agencyrecap",
+  "stars": null,
+  "accent": "#0f766e"
+}

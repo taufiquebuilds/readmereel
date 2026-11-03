@@ -1,0 +1,13 @@
+{
+  "name": "launchday",
+  "problem": "Most good open-source projects launch badly and get ignored",
+  "promise": "A launch plan you can run in an evening",
+  "features": [
+    { "title": "A launch score out of 100", "detail": "Flags a vague opening line, no demo, no install command and leaked secrets" },
+    { "title": "Checks your name before you ship", "detail": "Looks for collisions on GitHub, crates.io, npm, PyPI and Homebrew" },
+    { "title": "Launch posts you copy and paste", "detail": "Show HN, Reddit and X posts, with a schedule in your time zone" }
+  ],
+  "install": "/plugin marketplace add taufiquebuilds/launchday",
+  "url": "github.com/taufiquebuilds/launchday",
+  "stars": null
+}

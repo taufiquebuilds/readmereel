@@ -1,0 +1,14 @@
+{
+  "name": "nopurple",
+  "problem": "AI decks all look the same: blue gradients and topic titles",
+  "promise": "Slides and charts that look designed by a person",
+  "features": [
+    { "title": "Slides that lead with the number", "detail": "Each title is the point as a sentence, with the real number up front", "image": "examples/nopurple/real-before-after.png" },
+    { "title": "Charts with one clear point", "detail": "Grey bars, one accent colour, values labelled, scales that start at zero", "image": "examples/nopurple/charts-before-after.png" },
+    { "title": "Six calm themes", "detail": "Paper, ink, swiss, forest, sand and mono, the same for slides and charts", "image": "examples/nopurple/themes.png" }
+  ],
+  "install": "/plugin marketplace add taufiquebuilds/nopurple",
+  "url": "github.com/taufiquebuilds/nopurple",
+  "stars": null,
+  "accent": "#d9480f"
+}
