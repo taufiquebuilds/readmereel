@@ -2,8 +2,14 @@
 <html><head><meta charset="UTF-8" /></head><body><template>
 <style>
   #root { position: absolute; inset: 0; overflow: hidden; background: var(--ground); display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: "Inter", sans-serif; }
-  #root[data-tone="dark"] { --ink: #f5f6f8; --muted: #a3aab5; }
-  #root[data-tone="light"] { --ink: #111418; --muted: #5b6470; }
+  #root[data-tone="dark"] { --ink: #f5f6f8; --muted: #a3aab5; --grid: rgba(255, 255, 255, 0.06); }
+  #root[data-tone="light"] { --ink: #111418; --muted: #5b6470; --grid: rgba(0, 0, 0, 0.06); }
+  /* A drafting grid behind the mark (a .ground layer: the transitions leave it alone). */
+  .title-grid { position: absolute; inset: -200px; pointer-events: none;
+    background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 64px 64px; background-position: 200px 200px; }
+  /* Content sits above the grid (positioned layers paint over static ones). */
+  .title-mark, .title-name, .title-promise { position: relative; }
   .title-mark { display: flex; justify-content: center; }
   .title-badge { width: 150px; height: 150px; border-radius: 38px; background: var(--accent); display: grid; place-items: center; overflow: hidden; flex: none; }
   .title-badge img { width: 110px; height: 110px; object-fit: contain; }
@@ -16,6 +22,7 @@
   #root[data-layout="tall"] .title-promise { margin-top: 52px; }
 </style>
 <div id="root" data-composition-id="__ID__" data-width="__W__" data-height="__H__" data-layout="__LAYOUT__" data-style="__STYLE__">
+  <div class="ground title-grid" aria-hidden="true" data-layout-ignore></div>
   <div class="title-mark"><div class="title-badge" data-zoom-target>__LOGO__</div></div>
   <div class="title-name hero" data-field="name">__NAME__</div>
   <div class="title-promise" data-field="scenes[__INDEX__].promise">__PROMISE__</div>
@@ -36,10 +43,12 @@ __RUNTIME__
   name.textContent = "";
   letters.forEach((c) => { const s = document.createElement("span"); s.textContent = c === " " ? "\u00a0" : c; name.appendChild(s); });
   const words = RR.words(promise);
-  // The mark is on screen (small) from the first frame and springs up, the name sharpens letter by letter, the promise
-  // blurs in word by word: then dead still.
-  tl.fromTo(q(".title-badge"), { scale: 0.2, rotation: -30 }, { scale: 1, rotation: 0, duration: 0.5, ease: "back.out(1.7)" }, tBadge)
-    .fromTo(qa(".title-name span"), { opacity: 0, filter: "blur(14px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.28, stagger: 0.035, ease: "power2.out" }, tName);
+  // The grid settles, the mark is on screen (half size) from the first frame and springs up, the name sharpens letter
+  // by letter from a ghost of itself, the promise blurs in word by word: then dead still.
+  tl.fromTo(q(".title-grid"), { y: 120 }, { y: 0, duration: 0.8, ease: "expo.out" }, 0)
+    .fromTo(q(".title-badge"), { scale: 0.5, rotation: -30 }, { scale: 1, rotation: 0, duration: 0.5, ease: "back.out(1.7)" }, tBadge)
+    // Letters 0.035 s apart, but a long name still lands within 0.4 s.
+    .fromTo(qa(".title-name span"), { opacity: 0.25, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.28, stagger: Math.min(0.035, 0.4 / Math.max(1, qa(".title-name span").length - 1)), ease: "power2.out" }, tName);
   RR.blurIn(tl, words, tPromise, { stagger: 0.07, duration: 0.16 });
   S.done();
 })();

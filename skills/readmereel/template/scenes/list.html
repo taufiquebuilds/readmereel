@@ -8,7 +8,7 @@
   #root[data-style="signal"] { --mark: var(--ink); }
   #root[data-style="signal"][data-tone="dark"] { --muted: rgba(255, 255, 255, 0.86); --track: rgba(255, 255, 255, 0.28); }
   #root[data-style="signal"][data-tone="light"] { --muted: rgba(0, 0, 0, 0.72); --track: rgba(0, 0, 0, 0.2); }
-  .list-stage { display: flex; flex-direction: column; align-items: center; }
+  .list-stage { position: relative; display: flex; flex-direction: column; align-items: center; }
   .list-head { display: flex; align-items: center; gap: 26px; margin-bottom: 54px; font-family: "JetBrains Mono", monospace; font-size: 44px; font-weight: 500; line-height: 1; }
   #root[data-layout="tall"] .list-head { margin-bottom: 72px; font-size: 56px; gap: 32px; }
   #root[data-layout="tall"] .list-track { width: 168px; height: 5px; }
@@ -23,9 +23,14 @@
   .list-slots { display: grid; justify-items: center; align-items: center; }
   /* Every item sits in the same cell; it rises into and leaves through its own window (soft-edged while items move). */
   .list-slot { grid-area: 1 / 1; padding: 0.2em 0; overflow: clip; }
+  /* The item's number, huge and faint behind the list (a .ground layer; generated content, so it is not read as text). */
+  .list-ghost { position: absolute; left: 0; right: 0; top: 50%; height: 900px; margin-top: -450px; display: flex; justify-content: center; clip-path: inset(0); pointer-events: none; }
+  .list-ghost-reel { font-weight: 900; font-size: 900px; line-height: 1; letter-spacing: -0.05em; color: var(--ink); opacity: 0.05; white-space: pre; text-align: center; font-variant-numeric: tabular-nums; }
+  .list-ghost-reel::before { content: attr(data-digits); }
   .list-item { font-weight: 900; font-size: 150px; letter-spacing: -0.045em; line-height: 1.04; color: var(--ink); text-align: center; text-wrap: balance; }
 </style>
 <div id="root" data-composition-id="__ID__" data-width="__W__" data-height="__H__" data-layout="__LAYOUT__" data-style="__STYLE__">
+  <div class="ground list-ghost" aria-hidden="true" data-layout-ignore><div class="list-ghost-reel"></div></div>
   <div class="list-stage">
     <div class="list-head"><span class="list-index"><span>0</span><span class="list-reel-mask"><span class="list-reel"></span></span></span><span class="list-track"><span class="list-fill"></span></span><span class="list-of">__COUNT__</span></div>
     <div class="list-slots">
@@ -52,7 +57,11 @@ __RUNTIME__
   const reel = q(".list-reel");
   items.forEach((_, k) => { const d = document.createElement("span"); d.textContent = String(k + 1); reel.appendChild(d); });
   const step = reel.firstChild.offsetHeight;
+  const ghost = q(".list-ghost-reel");
+  ghost.setAttribute("data-digits", items.map((_, k) => String(k + 1)).join("\n"));
   const fill = q(".list-fill");
+  // The list leans in slowly while it holds (an inner wrapper: the root's children belong to the transitions).
+  tl.fromTo(q(".list-slots"), { scale: 1 }, { scale: 1.03, duration: Math.max(0.1, D.duration - 0.35), ease: "none" }, 0.35);
   tl.fromTo(fill, { scaleX: 0 }, { scaleX: 1 / n, duration: 0.5, ease: "expo.out" }, 0.15);
   // Item 0 is on screen from the first frame (the scene's entrance brings it in); the others wait below their window.
   items.slice(1).forEach((el) => tl.set(el, { opacity: 0 }, 0));
@@ -71,6 +80,7 @@ __RUNTIME__
       .fromTo(el, { yPercent: 110, filter: "blur(16px)" }, { yPercent: 0, filter: "blur(0px)", duration: 0.3, ease: "expo.out" }, t)
       // The index flicks to the next number like a slot machine; the rule fills one step.
       .fromTo(reel, { y: -(k - 1) * step }, { y: -k * step, duration: 0.1, ease: "power2.out", immediateRender: false }, t - 0.02)
+      .fromTo(ghost, { y: -(k - 1) * 900 }, { y: -k * 900, duration: 0.3, ease: "expo.out", immediateRender: false }, t - 0.02)
       .fromTo(fill, { scaleX: k / n }, { scaleX: (k + 1) / n, duration: 0.4, ease: "expo.out", immediateRender: false }, t);
   });
   S.done();

@@ -28,7 +28,7 @@ __RUNTIME__
     const t = starts[k];
     if (k === 0) {
       // On screen from the first frame: words sharpen one after another.
-      tl.fromTo(ws, { opacity: 0.25, filter: "blur(10px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.18, stagger: 0.07, ease: "power2.out" }, t);
+      tl.fromTo(ws, { opacity: 0.45, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.18, stagger: 0.07, ease: "power2.out" }, t);
     } else {
       // Whips up from below and lands sharp, just after the previous line has left.
       tl.set(el, { opacity: 1 }, t).fromTo(el, { y: travel, filter: "blur(18px)" }, { y: 0, filter: "blur(0px)", duration: 0.32, ease: "expo.out" }, t);

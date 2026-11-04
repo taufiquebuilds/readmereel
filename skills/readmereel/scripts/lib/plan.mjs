@@ -36,8 +36,8 @@ export function sceneBeats(scene, story = {}) {
       return { lineStarts: lines.map((_, k) => sum(k, (j) => T + hold(lines[j]))) };
     }
     case "title":
-      // Badge, name, promise. The badge is on screen (small) from the first frame.
-      return { landTimes: [0, 0.2, 0.65] };
+      // Badge, name, promise. The badge is on screen (half size) from the first frame and the name right after it.
+      return { landTimes: [0, 0.05, 0.5] };
     case "ui": {
       const focus = scene.focus ?? [];
       const focusStarts = focus.map((_, k) => 0.8 + sum(k, (j) => 0.6 + hold(focus[j].label ?? "")));
@@ -249,6 +249,7 @@ export function planFilm(story) {
       in: i === 0 ? null : kinds[i - 1],
       out: i === n - 1 ? null : kinds[i],
       ground: grounds[type],
+      prevGround: i === 0 ? null : grounds[scenes[i - 1].type],
       nextGround: i === n - 1 ? null : grounds[scenes[i + 1].type],
       beats: sceneBeats(scene, story),
       data,

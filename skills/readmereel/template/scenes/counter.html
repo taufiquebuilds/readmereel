@@ -4,6 +4,9 @@
   #root { position: absolute; inset: 0; overflow: hidden; background: var(--ground); display: flex; align-items: center; justify-content: center; font-family: "Inter", sans-serif; }
   #root[data-tone="dark"] { --ink: #f5f6f8; --muted: #a3aab5; --line: rgba(255, 255, 255, 0.14); }
   #root[data-tone="light"] { --ink: #111418; --muted: #5b6470; --line: rgba(0, 0, 0, 0.12); }
+  /* Content sits above the glow (positioned layers paint over static ones). */
+  .counter-stage { position: relative; }
+  .counter-glow { position: absolute; inset: 0; pointer-events: none; }
   .counter-row { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; align-items: center; }
   #root[data-layout="tall"] .counter-row { grid-auto-flow: row; row-gap: 120px; }
   .counter-item { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; }
@@ -13,14 +16,15 @@
   .counter-label { font-weight: 600; font-size: 40px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); white-space: nowrap; line-height: 1.2; }
   .counter-figure { display: flex; align-items: baseline; justify-content: center; margin: 24px 0 14px; font-weight: 900; font-size: 170px; letter-spacing: -0.04em; line-height: 1; color: var(--ink); white-space: nowrap; }
   .counter-item:first-child .counter-figure { color: var(--accent-ink); }
-  .counter-value { display: inline-block; font-variant-numeric: tabular-nums; text-align: right; }
+  .counter-value { display: inline-block; font-variant-numeric: tabular-nums; text-align: center; }
   .counter-suffix { display: inline-block; font-size: 0.6em; margin-left: 0.06em; letter-spacing: -0.02em; }
   .counter-note { font-weight: 600; font-size: 36px; color: var(--accent-ink); white-space: nowrap; line-height: 1.2; }
 </style>
 <div id="root" data-composition-id="__ID__" data-width="__W__" data-height="__H__" data-layout="__LAYOUT__" data-style="__STYLE__">
-  <div class="counter-row">
+  <div class="ground counter-glow" aria-hidden="true" data-layout-ignore></div>
+  <div class="counter-stage"><div class="counter-row">
     __ITEMS__
-  </div>
+  </div></div>
   <script type="application/json" class="scene-data">__DATA__</script>
 </div>
 <script>
@@ -36,7 +40,7 @@ __RUNTIME__
   const rowW = Math.round(W * (wide ? 0.88 : 0.84));
   const colW = wide ? Math.floor(rowW / n) - 60 : rowW;
   q(".counter-row").style.width = rowW + "px";
-  const max = (wide ? [320, 220, 170] : [340, 260, 210])[n - 1];
+  const max = (wide ? [440, 220, 170] : [400, 260, 210])[n - 1];
   // Each value reads its landed text from the data (at most one decimal, cut, never rounded up) before anything is sized.
   items.forEach((it, k) => { it.querySelector(".counter-value").textContent = RR.numText(data[k].value); });
   // Every value in the film's row shares one size: the largest at which the longest one (with its suffix) fits.
@@ -56,7 +60,7 @@ __RUNTIME__
     const value = it.querySelector(".counter-value");
     const suffix = it.querySelector(".counter-suffix");
     const note = it.querySelector(".counter-note");
-    // The value's box keeps its landed width, so the digits grow leftwards and nothing around them moves.
+    // The value's box keeps its landed width, so nothing around the rolling digits moves (they stay centred under the label).
     value.style.width = value.offsetWidth + "px";
     if (k > 0) {
       const rule = document.createElement("i");
@@ -64,14 +68,26 @@ __RUNTIME__
       it.appendChild(rule);
       tl.fromTo(rule, wide ? { scaleY: 0 } : { scaleX: 0 }, { [wide ? "scaleY" : "scaleX"]: 1, duration: 0.6, ease: "expo.out" }, shown);
     }
-    tl.fromTo(it.querySelector(".counter-label"), { opacity: 0, filter: "blur(8px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.25, ease: "power2.out" }, shown)
-      .fromTo(it.querySelector(".counter-figure"), { opacity: 0, y: 36, filter: "blur(10px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.55, ease: "expo.out" }, shown);
+    tl.fromTo(it.querySelector(".counter-label"), { opacity: 0.3, filter: "blur(8px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.25, ease: "power2.out" }, shown)
+      .fromTo(it.querySelector(".counter-figure"), { opacity: 0.3, y: 20, filter: "blur(4px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.55, ease: "expo.out" }, shown);
     const v = data[k].value;
-    RR.roll(tl, value, 0, v, t, 1.0, RR.decimals(v));
+    // The roll starts from the value's own order of magnitude (4,812 from 1,000), so the figure reads full width
+    // from the first frame instead of a lone "0".
+    RR.roll(tl, value, RR.rollFrom(v), v, t, 1.0, RR.decimals(v));
     // As the number settles, its unit pops on (the plan's pop lands at +1.0) and the note blurs in.
     if (suffix) tl.fromTo(suffix, { opacity: 0, scale: 0.4 }, { opacity: 1, scale: 1, duration: 0.4, ease: "back.out(2.2)" }, t + 0.92);
     if (note) RR.blurIn(tl, note, t + 0.9, { duration: 0.18 });
   });
+  // An accent glow behind the first figure, and a slow lean in towards it while the row holds (on the row, an inner
+  // wrapper: the root's children belong to the transitions). Scaling about the figure's centre keeps the zoom exit's
+  // dive point, measured from layout, on target.
+  const c = RR.centre(figures[0], S.R);
+  const row = q(".counter-row");
+  const rc = RR.centre(row, S.R);
+  const origin = (c.x - rc.x + row.offsetWidth / 2) + "px " + (c.y - rc.y + row.offsetHeight / 2) + "px";
+  q(".counter-glow").style.background = "radial-gradient(900px 700px at " + c.x + "px " + c.y + "px, color-mix(in srgb, var(--accent) 15%, transparent), transparent 70%)";
+  tl.fromTo(q(".counter-glow"), { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "power1.out" }, 0)
+    .fromTo(row, { scale: 1 }, { scale: 1.03, transformOrigin: origin, duration: Math.max(0.1, D.duration - starts[0]), ease: "none" }, starts[0]);
   S.done();
 })();
 </script>

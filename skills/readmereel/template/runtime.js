@@ -95,6 +95,13 @@ var RR = (function () {
     const d = decimals(value);
     return (neg ? "-" : "") + Number(int).toLocaleString("en-US") + (d ? "." + frac.slice(0, d) : "");
   }
+  // Where a counter's roll starts: the smallest number with as many whole digits as the value (4,812 -> 1,000,
+  // 4.5 -> 1, -126 -> -100), so the rolling figure is as wide as the landed one; 0 for values under 1.
+  function rollFrom(value) {
+    const digits = String(Math.trunc(Math.abs(value))).length;
+    if (Math.abs(value) < 1) return 0;
+    return Math.sign(value) * Math.pow(10, digits - 1);
+  }
   // Rolls el's text from `from` to `to`; the landed frame always reads numText(to) exactly.
   function roll(tl, el, from, to, t, dur, places) {
     const d = places ?? decimals(to);
@@ -162,19 +169,36 @@ var RR = (function () {
         els.forEach((el) => { el.style.translate = wide ? "0 var(--rr-whip)" : "var(--rr-whip) 0"; });
         tl.fromTo(R, { clipPath: wide ? "inset(100% 0% 0% 0%)" : "inset(0% 0% 0% 100%)" }, { clipPath: "inset(0% 0% 0% 0%)", duration: T, ease: "expo.out" }, 0);
         tl.fromTo(R, { "--rr-whip": (wide ? H : W) * 0.7 + "px" }, { "--rr-whip": "0px", duration: T, ease: "expo.out" }, 0);
-        tl.fromTo(els, { filter: "blur(16px)" }, { filter: "blur(0px)", duration: T, ease: "power2.out" }, 0);
+        tl.fromTo(els, { filter: "blur(8px)" }, { filter: "blur(0px)", duration: T, ease: "power2.out" }, 0);
+        if (D.prevGround && D.prevGround === D.ground) {
+          // Same ground on both sides: the wipe itself would be invisible, so an accent bar rides its edge (a .ground
+          // layer, so the transitions leave it alone) and fades as the wipe settles.
+          const bar = document.createElement("div");
+          bar.className = "ground rr-edge";
+          bar.setAttribute("data-layout-ignore", "");
+          bar.setAttribute("aria-hidden", "true");
+          Object.assign(bar.style, { position: "absolute", left: "0", top: "0", background: "var(--accent-ink)", zIndex: "40", pointerEvents: "none" },
+            wide ? { width: "100%", height: "40px" } : { width: "40px", height: "100%" });
+          R.appendChild(bar);
+          tl.fromTo(bar, { [wide ? "y" : "x"]: wide ? H : W }, { [wide ? "y" : "x"]: -40, duration: T, ease: "expo.out" }, 0)
+            .fromTo(bar, { opacity: 1 }, { opacity: 0, duration: 0.12, ease: "power1.in", immediateRender: false }, T - 0.17);
+        }
         break;
       }
-      case "flood":
-        // The new ground grows from the centre first (75% reaches the corners), then the new content sharpens on it.
-        // filter opacity() leaves the elements' own opacity free for the scene to animate.
-        tl.fromTo(R, { clipPath: "circle(0% at 50% 50%)" }, { clipPath: "circle(75% at 50% 50%)", duration: 0.4, ease: "power2.inOut" }, 0);
-        tl.fromTo(content(S), { filter: "blur(16px) opacity(0)" }, { filter: "blur(0px) opacity(1)", duration: 0.25, ease: "power2.out" }, 0.18);
+      case "flood": {
+        // The new ground rises as a dome from below the frame (a circle centred under the bottom edge, so it never
+        // opens as a hole in the middle of the outgoing text) until it reaches the top corners; the new content
+        // sharpens on it almost at once. filter opacity() leaves the elements' own opacity free for the scene.
+        const r = Math.ceil(Math.hypot(W / 2, H * 1.2) * 1.02);
+        tl.fromTo(R, { clipPath: "circle(0px at 50% 120%)" }, { clipPath: "circle(" + r + "px at 50% 120%)", duration: 0.4, ease: "power2.inOut" }, 0);
+        tl.fromTo(content(S), { filter: "blur(16px) opacity(0)" }, { filter: "blur(0px) opacity(1)", duration: 0.25, ease: "power2.out" }, 0.04);
         break;
+      }
       case "zoom":
-        // Hidden until the outgoing scene's dot has covered the frame in this scene's ground.
-        tl.fromTo(R, { opacity: 0 }, { opacity: 0, duration: 0.001 }, 0).set(R, { opacity: 1 }, T - 0.01);
-        tl.fromTo(content(S), { filter: "blur(12px)" }, { filter: "blur(0px)", duration: 0.3, ease: "power2.out" }, T - 0.01);
+        // Hidden until the outgoing scene's dot has covered the frame in this scene's ground (or, on the same ground,
+        // its camera has dived): shown on the last frame the outgoing scene paints, so no frame falls between them.
+        tl.fromTo(R, { opacity: 0 }, { opacity: 0, duration: 0.001 }, 0).set(R, { opacity: 1 }, T - 0.045);
+        tl.fromTo(content(S), { filter: "blur(12px)" }, { filter: "blur(0px)", duration: 0.3, ease: "power2.out" }, T - 0.045);
         break;
       case "carry":
       case "blur":
@@ -204,11 +228,17 @@ var RR = (function () {
         tl.to(content(S), { opacity: 0, filter: "blur(8px)", duration: 0.18, ease: "power2.in" }, end - T);
         break;
       case "carry":
-        tl.to(hero, { scale: 0.6, xPercent: -45, opacity: 0, filter: "blur(6px)", duration: 0.38, ease: "power3.in" }, end - 0.4);
+        // Opts out of motion blur as it goes, which would otherwise redraw it above the incoming scene.
+        tl.set(hero, { attr: { "data-motion-blur": "off" } }, end - 0.45)
+          .to(hero, { scale: 0.6, xPercent: -45, opacity: 0, filter: "blur(6px)", duration: 0.38, ease: "power3.in" }, end - 0.4);
         break;
       case "zoom": {
         const target = S.q("[data-zoom-target]") || hero;
         const { x: cx, y: cy } = centre(target, R);
+        const cam = S.q(".cam") || R;
+        tl.to(cam, { scale: 3, transformOrigin: cx + "px " + cy + "px", duration: 0.45, ease: "power3.in" }, end - 0.45);
+        // Into the same ground a dot would only read as a hole: the camera dives and the next scene sharpens in.
+        if (D.nextGround === D.ground) break;
         // The dot starts at 0.6 x the target's larger side and only once the camera is moving fast (end - 0.22, under
         // its blur); it fades in over 0.06 s and grows past the frame's corners at once, so it reads as the next ground
         // swallowing the target rather than a hole punched in it.
@@ -218,14 +248,12 @@ var RR = (function () {
         dot.setAttribute("data-layout-ignore", "");
         Object.assign(dot.style, { position: "absolute", left: cx - r + "px", top: cy - r + "px", width: 2 * r + "px", height: 2 * r + "px", borderRadius: "50%", background: D.nextGround, opacity: "0", zIndex: "50", pointerEvents: "none" });
         R.appendChild(dot);
-        const cam = S.q(".cam") || R;
-        tl.to(cam, { scale: 3, transformOrigin: cx + "px " + cy + "px", duration: 0.45, ease: "power3.in" }, end - 0.45)
-          .fromTo(dot, { opacity: 0 }, { opacity: 1, duration: 0.06, ease: "none", immediateRender: false }, end - 0.22)
+        tl.fromTo(dot, { opacity: 0 }, { opacity: 1, duration: 0.06, ease: "none", immediateRender: false }, end - 0.22)
           .fromTo(dot, { scale: 1 }, { scale: Math.ceil((Math.hypot(W, H) / r) * 1.1), duration: 0.22, ease: "power2.in", immediateRender: false }, end - 0.22);
         break;
       }
       default: break; // flood, or the last scene: hold
     }
   }
-  return { T, scene, words, blurIn, roll, decimals, numText, fit, fitLines, type, centre, readable, contrast };
+  return { T, scene, words, blurIn, roll, rollFrom, decimals, numText, fit, fitLines, type, centre, readable, contrast };
 })();

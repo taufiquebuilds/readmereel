@@ -36,3 +36,26 @@ test("the title keeps the gap in a two-word name (its letter spans use a non-bre
   // A span holding only a normal space is whitespace-only and collapses to nothing as an inline-block.
   assert.match(html, /c === " " \? "\\u00a0" : c/);
 });
+
+test("decorative layers are .ground children the transitions leave alone, and hold no readable text", () => {
+  for (const [file, cls] of [["title.html", "title-grid"], ["list.html", "list-ghost"], ["counter.html", "counter-glow"]]) {
+    const html = readFileSync(join(TEMPLATE, "scenes", file), "utf8");
+    const tag = html.match(new RegExp(`<div class="ground ${cls}"[^>]*>`));
+    assert.ok(tag, `${file}: .ground ${cls}`);
+    assert.match(tag[0], /aria-hidden="true"/);
+    assert.match(tag[0], /data-layout-ignore/);
+  }
+  // The list's ghost numerals are generated content, not DOM text.
+  assert.match(readFileSync(join(TEMPLATE, "scenes", "list.html"), "utf8"), /\.list-ghost-reel::before \{ content: attr\(data-digits\); \}/);
+});
+
+test("a counter rolls from its own order of magnitude", () => {
+  assert.equal(RR.rollFrom(4812), 1000);
+  assert.equal(RR.rollFrom(126), 100);
+  assert.equal(RR.rollFrom(18), 10);
+  assert.equal(RR.rollFrom(4.5), 1);
+  assert.equal(RR.rollFrom(-9999999), -1000000);
+  assert.equal(RR.rollFrom(999999.9), 100000);
+  assert.equal(RR.rollFrom(0.5), 0);
+  assert.equal(RR.rollFrom(0), 0);
+});

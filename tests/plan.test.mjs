@@ -161,6 +161,12 @@ test("a counter holds its longest label and note after the last item settles", (
 
 test("the title badge is on screen from the first frame and the promise holds after its last word lands", () => {
   const scene = { type: "title", promise: "Monthly client reports that send themselves" };
-  assert.deepEqual(sceneBeats(scene, validStory2()).landTimes, [0, 0.2, 0.65]);
+  assert.deepEqual(sceneBeats(scene, validStory2()).landTimes, [0, 0.05, 0.5]);
   near(sceneLength(scene, validStory2()), 0.8 + 0.07 * 5 + 0.16 + hold(scene.promise) + T + 0.12);
+});
+
+test("each scene knows the ground it enters from", () => {
+  const p = planFilm(validStory2());
+  assert.equal(p.scenes[0].prevGround, null);
+  for (let i = 1; i < p.scenes.length; i++) assert.equal(p.scenes[i].prevGround, p.scenes[i - 1].ground);
 });
