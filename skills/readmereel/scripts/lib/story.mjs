@@ -137,6 +137,12 @@ const SOF = (m) => m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0
 // directory, no file with other hard links, nothing over 25 MB), only when its real path is inside baseDir (when one is
 // given, so a symlink cannot point out of the story folder), and only the header bytes it needs.
 export function imageSize(path, baseDir) {
+  const size = readImageSize(path, baseDir);
+  // A header that says 0 (or nonsense) would make every box scale divide by zero.
+  return size[0] > 0 && size[1] > 0 && Number.isFinite(size[0]) && Number.isFinite(size[1]) ? size : DEFAULT_SIZE;
+}
+
+function readImageSize(path, baseDir) {
   let fd;
   try {
     const real = realpathSync(path);

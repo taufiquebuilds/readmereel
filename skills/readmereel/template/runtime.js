@@ -156,6 +156,107 @@ var RR = (function () {
     return { x, y };
   }
 
+  // ---------- ui camera (pure geometry: no DOM, so it is unit-tested) ----------
+  // Frame px at identity; a shot is { x, y, scale }: translate then scale about the frame's top-left.
+  const cam = (() => {
+    const SAFE = 40, BAR = 54;
+    const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+    // Between lo and hi; when lo > hi (a box wider than the room it must stay in) anywhere in [hi, lo], so the box
+    // spans the room instead of being forced to its centre.
+    const within = (v, lo, hi) => (lo <= hi ? clamp(v, lo, hi) : clamp(v, hi, lo));
+    // The 1460 x 860 window: wide at 1:1, tall at 960/1460, centred across (tall: centred at 47% of the height).
+    function geometry(W, H) {
+      const wide = W > H, K = wide ? 1 : 960 / 1460, WW = 1460 * K, WH = 860 * K;
+      return { W, H, wide, K, WW, WH, BAR, wx: Math.round((W - WW) / 2), wy: Math.round(wide ? (H - WH) / 2 : H * 0.47 - WH / 2) };
+    }
+    // A focus box (image px, or screen CSS px when view.scale is 1) as a frame rect at identity.
+    const rect = (g, view, box) => ({ x: g.wx + g.K * (view.x + box[0] * view.scale), y: g.wy + g.K * (g.BAR + view.y + box[1] * view.scale), w: g.K * box[2] * view.scale, h: g.K * box[3] * view.scale });
+    // Puts r's centre at (cx, cy) at scale s; the window keeps covering the frame where it is big enough, but the box
+    // stays inside the side margins and [y0, y1].
+    function shot(g, r, s, cx, cy, y0, y1) {
+      let x = cx - s * (r.x + r.w / 2), y = cy - s * (r.y + r.h / 2);
+      if (s * g.WW >= g.W) x = clamp(x, g.W - s * (g.wx + g.WW), -s * g.wx);
+      if (s * g.WH >= g.H) y = clamp(y, g.H - s * (g.wy + g.WH), -s * g.wy);
+      x = within(x, SAFE - s * r.x, g.W - SAFE - s * (r.x + r.w));
+      y = within(y, y0 - s * r.y, y1 - s * (r.y + r.h));
+      return { x, y, scale: s };
+    }
+    const overlaps = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+    const inside = (a, b) => a.x >= b.x && a.y >= b.y && a.x + a.w <= b.x + b.w && a.y + a.h <= b.y + b.h;
+    // A box grown until it cuts no text box: each text box it overlaps but does not hold is taken whole.
+    function widen(box, texts) {
+      let b = { ...box };
+      for (let pass = 0; pass < 12; pass++) {
+        const cut = texts.find((t) => overlaps(t, b) && !inside(t, b));
+        if (!cut) break;
+        const x0 = Math.min(b.x, cut.x), y0 = Math.min(b.y, cut.y);
+        b = { x: x0, y: y0, w: Math.max(b.x + b.w, cut.x + cut.w) - x0, h: Math.max(b.y + b.h, cut.y + cut.h) - y0 };
+      }
+      return b;
+    }
+    // Moves a shot the least it can (up to 120 px each way) so that no frame edge cuts a text box, keeping the box
+    // where it was allowed to be. Text boxes are frame rects at identity.
+    function clean(g, sh, texts, box, y0, y1) {
+      if (!texts.length) return sh;
+      const s = sh.scale;
+      const on = (t) => ({ x: sh.x + s * t.x, y: sh.y + s * t.y, w: s * t.w, h: s * t.h });
+      const best = (axis) => {
+        const [lo, hi, size, other, osize, edge] = axis === "x" ? ["x", "w", g.W, "y", "h", g.H] : ["y", "h", g.H, "x", "w", g.W];
+        const shown = texts.map(on).filter((t) => t[other] < edge && t[other] + t[osize] > 0);
+        const boxOn = on(box);
+        const [bmin, bmax] = axis === "x" ? [SAFE, g.W - SAFE] : [y0, y1];
+        const boxFits = boxOn[hi] <= bmax - bmin;
+        const cuts = (d) => shown.filter((t) => (t[lo] + d < 0 && t[lo] + t[hi] + d > 0) || (t[lo] + d < size && t[lo] + t[hi] + d > size)).length;
+        let pick = 0, fewest = cuts(0);
+        for (let k = 1; k <= 60 && fewest > 0; k++) {
+          for (const d of [2 * k, -2 * k]) {
+            const b0 = boxOn[lo] + d, b1 = b0 + boxOn[hi];
+            if (boxFits && (b0 < bmin - 1e-6 || b1 > bmax + 1e-6)) continue;
+            const c = cuts(d);
+            if (c < fewest) { fewest = c; pick = d; }
+          }
+        }
+        return pick;
+      };
+      return { x: sh.x + best("x"), y: sh.y + best("y"), scale: s };
+    }
+    // The push to one focus box. Wide: the box fills at most 80% of the width and fits under the chip (scale 1.2 to
+    // 2.6), centred. Tall: framed by height (the box about half the frame); a box then wider than the frame is panned,
+    // from its left edge to its right edge, while it holds. band = { top, bottom }: where the box may sit.
+    function focus(g, r, texts, band) {
+      const room = band.bottom - band.top;
+      if (g.wide) {
+        const s = clamp(Math.min((0.8 * g.W) / r.w, (0.9 * room) / r.h), 1.2, 2.6);
+        return { from: clean(g, shot(g, r, s, g.W / 2, g.H / 2, band.top, band.bottom), texts, r, band.top, band.bottom), to: null };
+      }
+      const s = clamp(Math.min((0.5 * g.H) / r.h, (0.9 * room) / r.h), 1.2, 2.6);
+      const cy = (band.top + band.bottom) / 2;
+      if (s * r.w <= g.W - 2 * SAFE) return { from: clean(g, shot(g, r, s, g.W / 2, cy, band.top, band.bottom), texts, r, band.top, band.bottom), to: null };
+      const at = (cx) => clean(g, shot(g, r, s, cx, cy, band.top, band.bottom), texts, r, band.top, band.bottom);
+      return { from: at(SAFE + (s * r.w) / 2), to: at(g.W - SAFE - (s * r.w) / 2) };
+    }
+    // The caption view: 10% back from where the last push ended, the box lifted between the chip and the caption.
+    function backShot(g, r, last, texts, band) {
+      const s = Math.max(1, Math.min(last.scale * 0.9, (0.95 * (band.bottom - band.top)) / r.h));
+      const wider = s * r.w > g.W - 2 * SAFE;
+      // Tall, still wider than the frame: stay on the side the pan ended on.
+      const cx = !g.wide && wider ? g.W - SAFE - (s * r.w) / 2 : g.W / 2;
+      return clean(g, shot(g, r, s, cx, (band.top + band.bottom) / 2, band.top, band.bottom), texts, r, band.top, band.bottom);
+    }
+    // When the caption ease-back starts and how long it runs: at rest by end - 0.45, when the exits take over.
+    const back = (captionAt, end) => ({ t: captionAt - 0.15, duration: Math.max(0.2, Math.min(0.7, end - 0.45 - (captionAt - 0.15))) });
+    // Which end of a pan ("from" or "to") shows more of rect, the part of the screen that acts.
+    function aim(g, p, rc) {
+      const area = (sh) => {
+        const x0 = Math.max(0, sh.x + sh.scale * rc.x), x1 = Math.min(g.W, sh.x + sh.scale * (rc.x + rc.w));
+        const y0 = Math.max(0, sh.y + sh.scale * rc.y), y1 = Math.min(g.H, sh.y + sh.scale * (rc.y + rc.h));
+        return Math.max(0, x1 - x0) * Math.max(0, y1 - y0);
+      };
+      return p.to && area(p.to) > area(p.from) ? "to" : "from";
+    }
+    return { SAFE, geometry, rect, shot, widen, clean, focus, backShot, back, aim };
+  })();
+
   // ---------- transitions (built inside each scene; the next scene starts T before this one ends) ----------
   function content(S) { return S.qa(":scope > :not(.scene-data):not(.ground):not(script):not(style)"); }
   function transIn(S) {
@@ -202,9 +303,13 @@ var RR = (function () {
         tl.fromTo(content(S), { filter: "blur(12px)" }, { filter: "blur(0px)", duration: 0.3, ease: "power2.out" }, T - 0.045);
         break;
       case "carry":
+        // Built underneath the outgoing scene (the builder puts a carry's host above the next one), which clears its
+        // ground around its hero: this scene is there from the first frame and sharpens as it is uncovered.
+        tl.fromTo(content(S), { filter: "blur(8px)" }, { filter: "blur(0px)", duration: 0.25, ease: "power2.out" }, 0.1);
+        break;
       case "blur":
         // A blur dissolve is short (0.1 s): between a dark and a light scene its midpoint is a flat grey with no ink.
-        tl.fromTo(R, { opacity: 0 }, { opacity: 1, duration: D.in === "carry" ? 0.15 : 0.1, ease: "power2.out" }, D.in === "carry" ? 0.15 : 0);
+        tl.fromTo(R, { opacity: 0 }, { opacity: 1, duration: 0.1, ease: "power2.out" }, 0);
         tl.fromTo(content(S), { filter: "blur(8px)" }, { filter: "blur(0px)", duration: 0.2, ease: "power2.out" }, 0.1);
         break;
       default: break; // first scene: no entrance transition
@@ -229,16 +334,42 @@ var RR = (function () {
       case "blur":
         tl.to(content(S), { opacity: 0, filter: "blur(8px)", duration: 0.18, ease: "power2.in" }, end - T);
         break;
-      case "carry":
-        // Opts out of motion blur as it goes, which would otherwise redraw it above the incoming scene.
+      case "carry": {
+        // This scene stays on top of the next one (the builder raises a carry's host): from end - T its ground and
+        // everything but the hero fade away, so the next scene builds around the hero as it shrinks and slides out.
+        // The hero fades only over the last 0.1 s. It opts out of motion blur, which would redraw it as a second copy.
+        const path = new Set();
+        for (let n = hero; n && n !== R; n = n.parentElement) path.add(n);
+        const others = [];
+        path.forEach((n) => { for (const sib of Array.from(n.parentElement.children)) if (!path.has(sib) && !sib.matches("script, style")) others.push(sib); });
+        const [r, g, b] = rgb(D.ground);
         tl.set(hero, { attr: { "data-motion-blur": "off" } }, end - 0.45)
-          .to(hero, { scale: 0.6, xPercent: -45, opacity: 0, filter: "blur(6px)", duration: 0.38, ease: "power3.in" }, end - 0.4);
+          .to(hero, { scale: 0.6, xPercent: -45, filter: "blur(4px)", duration: 0.4, ease: "power2.in" }, end - 0.4)
+          .to(hero, { opacity: 0, duration: 0.1, ease: "power1.in" }, end - 0.1)
+          .fromTo(R, { backgroundColor: D.ground }, { backgroundColor: "rgba(" + r + "," + g + "," + b + ",0)", duration: 0.15, ease: "power1.out", immediateRender: false }, end - T);
+        if (others.length) tl.to(others, { opacity: 0, filter: "blur(8px)", duration: 0.15, ease: "power1.out" }, end - T);
         break;
+      }
       case "zoom": {
         const target = S.q("[data-zoom-target]") || hero;
         const { x: cx, y: cy } = centre(target, R);
         const cam = S.q(".cam") || R;
         tl.to(cam, { scale: 3, transformOrigin: cx + "px " + cy + "px", duration: 0.45, ease: "power3.in" }, end - 0.45);
+        const disc = target.getAttribute("data-zoom-disc");
+        if (disc) {
+          // The target's own colour floods the frame (the green-tick move): a disc the size and colour of the target,
+          // on it from end - 0.22, grows past the corners and turns into the next ground over its last 40%.
+          const r = Math.max(4, Math.max(target.offsetWidth, target.offsetHeight) / 2);
+          const dot = document.createElement("div");
+          dot.className = "zoom-dot";
+          dot.setAttribute("data-layout-ignore", "");
+          Object.assign(dot.style, { position: "absolute", left: cx - r + "px", top: cy - r + "px", width: 2 * r + "px", height: 2 * r + "px", borderRadius: "50%", background: disc, opacity: "0", zIndex: "50", pointerEvents: "none" });
+          R.appendChild(dot);
+          tl.set(dot, { opacity: 1 }, end - 0.22)
+            .fromTo(dot, { scale: 1 }, { scale: Math.ceil((Math.hypot(W, H) / r) * 1.1), duration: 0.22, ease: "power2.in", immediateRender: false }, end - 0.22)
+            .fromTo(dot, { backgroundColor: disc }, { backgroundColor: D.nextGround || disc, duration: 0.09, ease: "none", immediateRender: false }, end - 0.09);
+          break;
+        }
         // Into the same ground a dot would only read as a hole: the camera dives and the next scene sharpens in.
         if (D.nextGround === D.ground) break;
         // The dot starts at 0.6 x the target's larger side and only once the camera is moving fast (end - 0.22, under
@@ -257,5 +388,5 @@ var RR = (function () {
       default: break; // flood, or the last scene: hold
     }
   }
-  return { T, scene, words, blurIn, roll, rollFrom, decimals, numText, fit, fitLines, type, centre, readable, contrast };
+  return { T, scene, words, blurIn, roll, rollFrom, decimals, numText, fit, fitLines, type, centre, readable, contrast, cam };
 })();

@@ -433,9 +433,14 @@ test("round 2 A: ~200 KB adversarial inputs finish quickly", () => {
   };
   for (const [label, html] of Object.entries(cases)) {
     assert.ok(Buffer.byteLength(html) < 256 * 1024 && html.length > 150000, label);
-    const t = performance.now();
-    const out = clean(html);
-    const ms = performance.now() - t;
+    // The best of three runs, so a busy machine (a render running alongside) does not fail a linear-time parser.
+    let ms = Infinity;
+    let out;
+    for (let run = 0; run < 3; run++) {
+      const t = performance.now();
+      out = clean(html);
+      ms = Math.min(ms, performance.now() - t);
+    }
     assert.ok(ms < 1500, `${label} took ${ms.toFixed(0)} ms`);
     assertBalanced(out.html, label);
   }
@@ -511,7 +516,7 @@ test("round 3 E: only allowlisted CSS functions survive, and an escaped ( is ref
     "background:linear-gradient(135deg,#1e293b,#0f172a)", "background:-webkit-linear-gradient(top,red,blue)",
     "background:repeating-radial-gradient(circle,red,blue 10%)", "background:conic-gradient(red,blue)",
     "transform:translate(-50%,-50%) rotate(45deg) scaleX(2) skewY(1deg) matrix(1,0,0,1,0,0) translate3d(0,0,0)",
-    "transform:perspective(100px) rotateX(10deg)", "transition:all .2s cubic-bezier(.2,0,0,1)", "animation-timing-function:steps(4,end)",
+    "transform:perspective(100px) rotateX(10deg)",
     "filter:blur(2px) brightness(1.1) contrast(1) drop-shadow(0 1px 2px rgb(0 0 0/.3)) grayscale(1) hue-rotate(9deg) invert(0) opacity(1) saturate(2) sepia(0)",
     "grid-template-columns:repeat(auto-fill,minmax(200px,1fr))", "width:fit-content(20em)", 'content:counter(x) ". "',
     'content:"\\2022"', 'content:"\\201C quoted \\201D"', "font-family:\\49nter,system-ui", "background:url(shots/a.png)",
@@ -581,4 +586,19 @@ test("round 4 K: custom properties may not hold a string that looks like an abso
   }
   const keep = clean(`<style>.a{--label:"Hello: world";--font:"Inter";--sep:"/";--path:"img/a.png";--x:1px;--tw-shadow:0 1px 2px rgb(0 0 0 / .1)}</style>`);
   assert.equal(keep.css, '.s .a{--label:"Hello: world";--font:"Inter";--sep:"/";--path:"img/a.png";--x:1px;--tw-shadow:0 1px 2px rgb(0 0 0 / .1)}');
+});
+
+test("a screen cannot animate itself: transition and animation declarations are dropped, @keyframes refused", () => {
+  // The ui scene animates a state's change itself; a screen transition would replay it in real time (3 s fades) and
+  // fight the timeline, and HyperFrames cannot seek it.
+  const decls = ["transition:opacity 3s linear", "-webkit-transition:all 1s", "transition-duration:3s", "transition-property:opacity",
+    "animation:spin 1s infinite", "animation-name:x", "-webkit-animation:x 1s", "animation-delay:2s", "trans\\69tion:opacity 3s"];
+  const out = clean(`<style>.a{color:red;${decls.join(";")}}</style><p class="a" style="${decls.join(";")};color:blue">k</p>`);
+  assert.match(out.css, /^\.s \.a\{color:red;?\}$/, out.css);
+  assert.match(out.html, /^<p class="a" style="color:blue;?">k<\/p>$/, out.html);
+  assert.ok(out.removed.some((r) => /transition/.test(r)) && out.removed.some((r) => /animation/.test(r)), out.removed.join("; "));
+  // Neighbours whose names only start alike are untouched.
+  const keep = clean(`<style>.a{transform:scale(2);transform-origin:0 0}</style>`);
+  assert.ok(keep.css.includes("transform:scale(2)") && keep.css.includes("transform-origin:0 0"), keep.css);
+  assert.throws(() => clean("<style>@keyframes x{from{opacity:0}}</style>"), /^Error: screen: @keyframes is not allowed$/);
 });

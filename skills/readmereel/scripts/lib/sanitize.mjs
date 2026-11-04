@@ -411,6 +411,9 @@ function sanitizeDeclaration(text, ctx) {
   const prop = cssUnescape(text.slice(0, colon).trim()).toLowerCase();
   const value = text.slice(colon + 1);
   if (BANNED_PROPS.has(prop)) { ctx.removed.push(`${prop} property in ${ctx.where}`); return ""; }
+  // A screen never animates itself: the ui scene animates a state's change on the film's timeline, and a CSS
+  // transition or animation would run in real time over it (and cannot be seeked).
+  if (/^(?:-[a-z]+-)?(?:transition|animation)(?:-|$)/.test(prop)) { ctx.removed.push(`${prop} property in ${ctx.where}`); return ""; }
   const banned = (v) => BANNED_VALUE.test(v.toLowerCase().replace(/\s+/g, ""));
   if (banned(value) || banned(cssUnescape(value))) { ctx.removed.push(`script or external-load value for ${prop} in ${ctx.where}`); return ""; }
   // A custom property is text until var() puts it somewhere, so a string in it that a URL parser would read as an

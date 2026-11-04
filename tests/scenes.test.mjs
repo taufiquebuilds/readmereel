@@ -100,3 +100,98 @@ test("the ui scene: camera, chips, states and caption hooks", () => {
   assert.match(ui, /__SCREEN_STYLE__/);
   assert.match(ui, /\.ui-body \{[^}]*width: 1460px; height: 806px;[^}]*overflow: hidden;[^}]*contain: layout paint size;/);
 });
+
+// ---------- ui camera (pure functions in RR.cam) ----------
+
+const wideG = RR.cam.geometry(1920, 1080);
+const tallG = RR.cam.geometry(1080, 1920);
+
+test("ui camera geometry: the window is 1460 x 860, scaled 960/1460 in tall, centred across", () => {
+  assert.deepEqual([wideG.K, wideG.wx, wideG.wy, wideG.WW, wideG.WH], [1, 230, 110, 1460, 860]);
+  assert.equal(tallG.K, 960 / 1460);
+  assert.equal(tallG.wx, 60);
+  assert.ok(Math.abs(tallG.WW - 960) < 1e-9);
+});
+
+test("ui camera: a focus box maps from image pixels (or screen CSS px) into the frame", () => {
+  const view = { scale: 0.5, x: 10, y: 20 };
+  assert.deepEqual(RR.cam.rect(wideG, view, [100, 200, 400, 300]), { x: 230 + 10 + 50, y: 110 + 54 + 20 + 100, w: 200, h: 150 });
+});
+
+test("ui camera: a shot centres the box, keeps the window over the frame, but always keeps the box in the margins", () => {
+  const r = { x: 300, y: 300, w: 400, h: 200 };
+  const s = RR.cam.shot(wideG, r, 2, 960, 540, 100, 1040);
+  assert.equal(s.scale, 2);
+  // Centred: X + 2 * 500 = 960 would put the window's left edge at 2 * 230 - 40 = 420 > 0, so the window clamp wins...
+  assert.ok(s.x <= -2 * wideG.wx + 1e-9, "the window's left edge stays at or past the frame's left edge");
+  // ...but the box's left edge is never pushed past the margin.
+  assert.ok(s.x + 2 * r.x >= RR.cam.SAFE - 1e-9);
+  // A box that cannot fit between the margins is centred between them.
+  const big = RR.cam.shot(wideG, { x: 230, y: 164, w: 1460, h: 806 }, 2, 960, 540, 100, 1040);
+  assert.ok(Math.abs(big.x + 2 * (230 + 730) - 960) < 1e-6);
+});
+
+test("ui camera: a focus box that cuts a text box is widened to take it whole", () => {
+  const texts = [{ x: 90, y: 10, w: 60, h: 20 }, { x: 300, y: 40, w: 100, h: 20 }, { x: 160, y: 80, w: 30, h: 20 }, { x: 600, y: 600, w: 10, h: 10 }];
+  // Cuts the first (x 90-150) and the second (x 300-400); holds the third whole; misses the fourth.
+  assert.deepEqual(RR.cam.widen({ x: 100, y: 0, w: 250, h: 100 }, texts), { x: 90, y: 0, w: 310, h: 100 });
+  // Widening can catch another text box, which is then taken too.
+  assert.deepEqual(RR.cam.widen({ x: 0, y: 0, w: 120, h: 30 }, [{ x: 100, y: 0, w: 50, h: 30 }, { x: 140, y: 0, w: 50, h: 30 }]), { x: 0, y: 0, w: 190, h: 30 });
+});
+
+test("ui camera: the frame's edges are moved off any text they would cut", () => {
+  // Text in frame px at identity; at scale 1 with X = 0 the frame's left edge (x = 0) cuts the first box.
+  const texts = [{ x: -30, y: 100, w: 80, h: 30 }, { x: 600, y: 200, w: 100, h: 30 }];
+  const box = { x: 300, y: 100, w: 200, h: 100 };
+  const out = RR.cam.clean(wideG, { x: 0, y: 0, scale: 1 }, texts, box, 0, 1080);
+  const cuts = (o) => texts.filter((t) => { const l = o.x + o.scale * t.x, rr = l + o.scale * t.w; return l < 0 && rr > 0; }).length;
+  assert.equal(cuts(out), 0);
+  assert.ok(Math.abs(out.x) <= 60, "a small move");
+  // The box stays inside the margins.
+  assert.ok(out.x + box.x >= RR.cam.SAFE);
+});
+
+test("ui camera: tall frames a box by height (about half the frame) and pans across a box wider than the frame", () => {
+  const r = RR.cam.rect(tallG, { scale: 1, x: 0, y: 0 }, [240, 190, 980, 500]);
+  const plan = RR.cam.focus(tallG, r, [], { top: 250, bottom: 1880 });
+  assert.ok(Math.abs(plan.from.scale * r.h - 0.5 * 1920) < 1 || plan.from.scale === 2.6 || plan.from.scale === 1.2, "box about half the height");
+  assert.ok(plan.to, "a box wider than the frame is panned");
+  assert.ok(Math.abs(plan.from.x + plan.from.scale * r.x - RR.cam.SAFE) < 30, "the pan starts at the box's left edge");
+  assert.ok(Math.abs(plan.to.x + plan.to.scale * (r.x + r.w) - (1080 - RR.cam.SAFE)) < 30, "and ends at its right edge");
+  // A narrow box is not panned.
+  const narrow = RR.cam.rect(tallG, { scale: 1, x: 0, y: 0 }, [900, 190, 300, 300]);
+  assert.equal(RR.cam.focus(tallG, narrow, [], { top: 250, bottom: 1880 }).to, null);
+  // Wide keeps the brief's rule: the box fills at most 80% of the width, scale 1.2 to 2.6.
+  const w = RR.cam.focus(wideG, RR.cam.rect(wideG, { scale: 1, x: 0, y: 0 }, [240, 190, 980, 500]), [], { top: 166, bottom: 1040 });
+  assert.ok(w.from.scale * 980 <= 0.8 * 1920 + 1e-6 && w.from.scale >= 1.2 && w.to === null);
+});
+
+test("ui camera: the ease-back for the caption is at rest by end - 0.45, whatever the caption's length", () => {
+  for (const [captionAt, end] of [[3.1, 3.1 + 1.4 + 0.35], [2.2, 2.2 + 0.5 + 0.35], [4.5, 4.5 + 1.7 + 0.35]]) {
+    const b = RR.cam.back(captionAt, end);
+    assert.ok(b.t + b.duration <= end - 0.45 + 1e-9, `${captionAt} ${end}`);
+    assert.ok(b.duration > 0 && b.duration <= 0.7);
+    assert.equal(b.t, captionAt - 0.15);
+  }
+});
+
+test("ui zoom exit: chips and caption leave first, and a coloured tick becomes the flood disc", () => {
+  const ui = scene("ui.html");
+  assert.match(ui, /if \(D\.out === "zoom"\) tl\.to\(chips\.concat\(cap \? \[cap\] : \[\]\), \{ opacity: 0, filter: "blur\(8px\)", duration: 0\.15, ease: "power2\.in" \}, end - 0\.45\)/);
+  assert.match(ui, /zt\.setAttribute\("data-zoom-disc", disc\)/);
+  const runtime = readFileSync(join(TEMPLATE, "runtime.js"), "utf8");
+  assert.match(runtime, /const disc = target\.getAttribute\("data-zoom-disc"\)/);
+  // The disc turns into the next ground over the last 40% of its growth.
+  assert.match(runtime, /backgroundColor: D\.nextGround \|\| disc, duration: 0\.09[^)]*\}, end - 0\.09\)/);
+});
+
+test("ui camera, tall: a pan is aimed at the side of the box where the screen acts", () => {
+  const r = RR.cam.rect(tallG, { scale: 1, x: 0, y: 0 }, [240, 190, 980, 500]);
+  const p = RR.cam.focus(tallG, r, [], { top: 250, bottom: 1880 });
+  // A status column at the right of the box is shown by the pan's end; a name column at its left by its start.
+  const right = RR.cam.rect(tallG, { scale: 1, x: 0, y: 0 }, [1000, 250, 200, 300]);
+  const left = RR.cam.rect(tallG, { scale: 1, x: 0, y: 0 }, [260, 250, 200, 300]);
+  assert.equal(RR.cam.aim(tallG, p, right), "to");
+  assert.equal(RR.cam.aim(tallG, p, left), "from");
+});
+

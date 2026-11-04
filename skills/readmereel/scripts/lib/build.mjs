@@ -321,8 +321,13 @@ export function buildProject(story, layout, { baseDir, outDir, plan, sfxDir, tem
     writeFileSync(join(projectDir, "compositions", `${s.id}-${s.type}.html`), fill(readFileSync(file, "utf8"), slots, `scenes/${s.type}.html`));
   }
 
+  // Later scenes paint over earlier ones, except that a scene leaving by carry stays above the next one (it clears its
+  // ground around its hero while the next scene builds underneath).
+  const z = [];
+  for (let i = plan.scenes.length - 1; i >= 0; i--) z[i] = plan.scenes[i].out === "carry" && i + 1 < plan.scenes.length ? z[i + 1] + 5 : 10 * (i + 1);
+  const zIndex = (s, i) => z[i];
   const hosts = plan.scenes
-    .map((s, i) => `      <div id="h-${s.id}" data-composition-id="${s.id}" data-composition-src="compositions/${s.id}-${s.type}.html" data-start="${num(s.start)}" data-duration="${num(s.duration)}" data-track-index="${i}" data-width="${W}" data-height="${H}" data-track-kind="graphics" style="z-index:${i + 1}"></div>`)
+    .map((s, i) => `      <div id="h-${s.id}" data-composition-id="${s.id}" data-composition-src="compositions/${s.id}-${s.type}.html" data-start="${num(s.start)}" data-duration="${num(s.duration)}" data-track-index="${i}" data-width="${W}" data-height="${H}" data-track-kind="graphics" style="z-index:${zIndex(s, i)}"></div>`)
     .join("\n");
   const root = fill(readFileSync(join(templateDir, "root.html"), "utf8"), {
     W,

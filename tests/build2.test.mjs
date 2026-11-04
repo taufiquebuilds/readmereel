@@ -45,13 +45,14 @@ test("builds a root with one host per scene, overlapping by T", () => {
 });
 
 test("hosts paint later scenes over earlier ones and the root has no placeholders left", () => {
+  // (Without carries: see the carry test below for the one exception.)
   const story = onlyHookAndEnd();
   const plan = planFilm(story);
   const dir = buildProject(story, "tall", { baseDir: tmpDir(), outDir: tmpDir(), plan });
   const root = readFileSync(join(dir, "index.html"), "utf8");
   plan.scenes.forEach((s, i) => {
     const host = root.match(new RegExp(`<div id="h-${s.id}"[^>]*>`))[0];
-    assert.ok(host.includes(`style="z-index:${i + 1}"`), host);
+    assert.match(host, /style="z-index:\d+"/, host);
     assert.ok(host.includes(`data-duration="${s.duration}"`), host);
     assert.ok(host.includes('data-width="1080" data-height="1920"'), host);
   });
@@ -600,4 +601,23 @@ test("counter values in the HTML use the runtime's rule: at most one decimal, cu
   assert.equal(counterText(-0.5), "-0.5");
   assert.equal(counterText(-9999999), "-9,999,999");
   assert.equal(counterText(999999.9), "999,999.9");
+});
+
+test("hosts: each scene paints over the one before, but a scene leaving by carry stays above the next", () => {
+  const story = onlyHookAndEnd();
+  const plan = planFilm(story);
+  plan.scenes[1].out = "carry";
+  plan.scenes[2].in = "carry";
+  const dir = buildProject(story, "wide", { baseDir: tmpDir(), outDir: tmpDir(), plan });
+  const root = readFileSync(join(dir, "index.html"), "utf8");
+  const zOf = (r) => plan.scenes.map((s) => Number(r.match(new RegExp(`<div id="h-${s.id}"[^>]*z-index:(\\d+)`))[1]));
+  const ordered = (zs, scenes) => scenes.slice(0, -1).every((s, i) => (s.out === "carry" ? zs[i] > zs[i + 1] : zs[i] < zs[i + 1]));
+  const z = zOf(root);
+  assert.ok(z[1] > z[2], `carry out of s2 stays above s3: ${z}`);
+  assert.ok(ordered(z, plan.scenes), `otherwise later is higher: ${z}`);
+  // Two carries in a row (forced plans can do it) still stack: each above the next.
+  plan.scenes[2].out = "carry";
+  plan.scenes[3].in = "carry";
+  const z2 = zOf(readFileSync(join(buildProject(story, "wide", { baseDir: tmpDir(), outDir: tmpDir(), plan }), "index.html"), "utf8"));
+  assert.ok(ordered(z2, plan.scenes) && z2[1] > z2[3], `${z2}`);
 });

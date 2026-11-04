@@ -226,3 +226,12 @@ test("image sizes are read from GIF and WebP headers too", () => {
   assert.deepEqual(imageSize(join(dir, "l.webp")), [1200, 900]);
   assert.deepEqual(imageSize(join(dir, "ll.webp")), [1200, 900]);
 });
+
+test("an image header with a zero width or height gives the default size, never a zero to divide by", () => {
+  const dir = tmpDir();
+  writeFileSync(join(dir, "w0.png"), pngHeader(0, 720));
+  writeFileSync(join(dir, "h0.png"), pngHeader(1280, 0));
+  writeFileSync(join(dir, "z.gif"), Buffer.from("GIF89a\x00\x00\x84\x03\x00\x00", "latin1"));
+  writeFileSync(join(dir, "z.svg"), '<svg width="0" height="10"></svg>');
+  for (const f of ["w0.png", "h0.png", "z.gif", "z.svg"]) assert.deepEqual(imageSize(join(dir, f)), [1600, 1000], f);
+});

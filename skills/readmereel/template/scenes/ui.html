@@ -78,13 +78,11 @@ __RUNTIME__
   const view = data.view;
   const { focusStarts, captionAt } = D.beats;
   const end = D.duration;
-  const REST = end - 0.45; // every camera move is over by now (the exits take over from here)
-  const SAFE = 40;
-  // The window: 1460 x 860 CSS px (a 54 px bar over the 1460 x 806 body), scaled by K and placed at (wx, wy).
-  const K = wide ? 1 : 960 / 1460;
-  const BAR = 54, WW = 1460 * K, WH = 860 * K;
-  const wx = Math.round((W - WW) / 2);
-  const wy = Math.round(wide ? (H - WH) / 2 : H * 0.47 - WH / 2);
+  // The window: 1460 x 860 CSS px (a 54 px bar over the 1460 x 806 body), scaled by K and placed at (wx, wy). The
+  // camera geometry is RR.cam's (pure functions, unit-tested).
+  const SAFE = RR.cam.SAFE;
+  const g = RR.cam.geometry(W, H);
+  const { K, BAR, wx, wy } = g;
   const place = q(".ui-place");
   Object.assign(place.style, { left: wx + "px", top: wy + "px", transform: "scale(" + K + ")" });
 
@@ -103,37 +101,27 @@ __RUNTIME__
     capTop = Math.min(H * 0.78, H - cap.offsetHeight - parseFloat(getComputedStyle(cap).bottom)) - 24;
   }
 
-  // A focus box (in the image's pixels, or the screen's CSS px) as a rect in frame px with the camera at rest.
-  const rectOf = (box) => ({
-    x: wx + K * (view.x + box[0] * view.scale),
-    y: wy + K * (BAR + view.y + box[1] * view.scale),
-    w: K * box[2] * view.scale,
-    h: K * box[3] * view.scale,
-  });
-  const clampTo = (v, lo, hi) => (lo <= hi ? Math.min(hi, Math.max(lo, v)) : (lo + hi) / 2);
-  // The camera (translate X, Y then scale s about the frame's top-left) that puts rect r's centre at (cx, cy): the
-  // window keeps covering the frame where it is big enough, but the box always stays inside the margins and [y0, y1].
-  function shot(r, s, cx, cy, y0, y1) {
-    let X = cx - s * (r.x + r.w / 2), Y = cy - s * (r.y + r.h / 2);
-    if (s * WW >= W) X = clampTo(X, W - s * (wx + WW), -s * wx);
-    if (s * WH >= H) Y = clampTo(Y, H - s * (wy + WH), -s * wy);
-    X = clampTo(X, SAFE - s * r.x, W - SAFE - s * (r.x + r.w));
-    Y = clampTo(Y, y0 - s * r.y, y1 - s * (r.y + r.h));
-    return { x: X, y: Y, scale: s };
+  // A rect read from layout (any scale) as a frame rect at identity, through the window body (1460 CSS px wide).
+  const body = q(".ui-body");
+  const bodyRect = body.getBoundingClientRect();
+  const kb = bodyRect.width / 1460 || 1;
+  const toFrame = (rc) => ({ x: wx + K * ((rc.left - bodyRect.left) / kb), y: wy + K * (BAR + (rc.top - bodyRect.top) / kb), w: (K * rc.width) / kb, h: (K * rc.height) / kb });
+  // HTML screens: every line of text inside the body, so that no focus box and no frame edge cuts a word.
+  const bodyFrame = { x: wx, y: wy + K * BAR, w: K * 1460, h: K * 806 };
+  const texts = [];
+  const screen = q(".ui-body > div > div");
+  if (screen) {
+    const walker = document.createTreeWalker(screen, NodeFilter.SHOW_TEXT);
+    const range = document.createRange();
+    for (let n = walker.nextNode(); n && texts.length < 3000; n = walker.nextNode()) {
+      if (!n.textContent.trim()) continue;
+      range.selectNodeContents(n);
+      for (const rc of Array.from(range.getClientRects())) {
+        const t = toFrame(rc);
+        if (t.w > 0.5 && t.h > 0.5 && t.x < bodyFrame.x + bodyFrame.w && t.x + t.w > bodyFrame.x && t.y < bodyFrame.y + bodyFrame.h && t.y + t.h > bodyFrame.y) texts.push(t);
+      }
+    }
   }
-  const rects = data.focus.map((f) => rectOf(f.box));
-  // Each push: the box fills at most 80% of the frame's width (92% in tall, where the 1460 px screen is shown at 960)
-  // and fits under the chip; scale 1.2 to 2.6.
-  const FILL = wide ? 0.8 : 0.92;
-  const shots = rects.map((r) => {
-    const s = Math.min(2.6, Math.max(1.2, Math.min((FILL * W) / r.w, (0.9 * (H - SAFE - top)) / r.h)));
-    return shot(r, s, W / 2, H / 2, top, H - SAFE);
-  });
-  // Before the caption the camera eases back 10% and lifts the box clear of the caption.
-  const last = rects.at(-1);
-  const sBack = Math.max(1, Math.min(shots.at(-1).scale * 0.9, (0.95 * (capTop - top)) / last.h));
-  const back = shot(last, sBack, W / 2, (top + capTop) / 2, top, capTop);
-
   // States: which elements each one flips, when, and the class each element has from then on.
   const states = (data.states || []).map((st) => {
     let els = [];
@@ -150,31 +138,62 @@ __RUNTIME__
   }));
   const pops = (el) => (el.matches(".tick, [data-pop]") ? [el] : []).concat(Array.from(el.querySelectorAll(".tick, [data-pop]")));
 
+  // Each focus box, widened to take whole any text it cuts; its push (and, tall, its pan); then the caption view.
+  const band = { top, bottom: H - SAFE };
+  const rects = data.focus.map((f) => RR.cam.widen(RR.cam.rect(g, view, f.box), texts));
+  const plans = rects.map((r) => RR.cam.focus(g, r, texts, band));
+  const bk = RR.cam.back(captionAt, end);
+  // A pan runs while its box holds (from the end of the push until the next push or the ease-back), if there is time.
+  // If the screen acts while the box holds, the pan heads for the elements that act and arrives before the first one
+  // flips; with no time for that, the push goes straight to them.
+  const unite = (rs) => { const x0 = Math.min(...rs.map((r) => r.x)), y0 = Math.min(...rs.map((r) => r.y)); return { x: x0, y: y0, w: Math.max(...rs.map((r) => r.x + r.w)) - x0, h: Math.max(...rs.map((r) => r.y + r.h)) - y0 }; };
+  const pans = plans.map((p, k) => {
+    if (!p.to) return null;
+    const t0 = focusStarts[k] + 0.6, t1 = (k + 1 < plans.length ? focusStarts[k + 1] : bk.t) - 0.05;
+    const acting = states.filter((st) => st.els.length && st.at >= focusStarts[k] && st.at < t1 + 0.05);
+    if (acting.length) {
+      const where = unite(acting.flatMap((st) => st.els.map((el) => toFrame(el.getBoundingClientRect()))));
+      if (RR.cam.aim(g, p, where) === "from") [p.from, p.to] = [p.to, p.from];
+      const until = Math.min(t1, acting[0].at - 0.1);
+      if (until - t0 > 0.5) return { t0, duration: until - t0 };
+      p.from = p.to;
+      return null;
+    }
+    return t1 - t0 > 0.3 ? { t0, duration: t1 - t0 } : null;
+  });
+  const holds = plans.map((p, k) => (pans[k] ? p.to : p.from));
+  const last = rects.at(-1);
+  const back = RR.cam.backShot(g, last, holds.at(-1), texts, { top, bottom: capTop });
+
+
   // The zoom exit dives into the last focus box, or (HTML) the last state's first tick: the green-tick move. It is
-  // measured where it rests on screen at the end, with every state applied.
-  const body = q(".ui-body");
-  let target = null;
+  // measured where it rests on screen at the end, with every state applied. A tick with a colour of its own becomes
+  // the disc that floods the frame (data-zoom-disc, read by the runtime's zoom).
+  let target = null, disc = "";
   const lastState = states.filter((st) => st.els.length).at(-1);
   if (lastState) {
     const tick = pops(lastState.els[0])[0];
     if (tick) {
       const saved = Array.from(classes.keys()).map((el) => [el, el.getAttribute("class")]);
       classes.forEach((list, el) => el.setAttribute("class", list.at(-1).cls));
-      const b = body.getBoundingClientRect(), t = tick.getBoundingClientRect();
-      const k = b.width / 1460;
+      const rc = tick.getBoundingClientRect();
+      const bg = getComputedStyle(tick).backgroundColor;
       saved.forEach(([el, c]) => (c === null ? el.removeAttribute("class") : el.setAttribute("class", c)));
-      if (t.width > 0 && k > 0) {
-        const lx = (t.left - b.left) / k, ly = (t.top - b.top) / k;
-        target = { x: wx + K * lx, y: wy + K * (BAR + ly), w: (K * t.width) / k, h: (K * t.height) / k };
+      if (rc.width > 0 && rc.height > 0) {
+        target = toFrame(rc);
+        const alpha = /rgba\([^)]*,\s*([\d.]+)\)/.exec(bg);
+        if (bg && bg !== "transparent" && !(alpha && Number(alpha[1]) < 0.5)) disc = bg;
       }
     }
   }
   const onScreen = (r) => ({ x: back.x + back.scale * r.x, y: back.y + back.scale * r.y, w: back.scale * r.w, h: back.scale * r.h });
   let dive = target && onScreen(target);
   const visible = (r) => r.x >= SAFE && r.x + r.w <= W - SAFE && r.y >= top && r.y + r.h <= capTop;
-  if (!dive || !visible(dive)) dive = onScreen(last);
-  const size = Math.min(240, Math.max(dive.w, dive.h));
-  Object.assign(q(".ui-target").style, { left: dive.x + dive.w / 2 - size / 2 + "px", top: dive.y + dive.h / 2 - size / 2 + "px", width: size + "px", height: size + "px" });
+  if (!dive || !visible(dive)) { dive = onScreen(last); disc = ""; }
+  const zw = disc ? dive.w : Math.min(240, Math.max(dive.w, dive.h)), zh = disc ? dive.h : zw;
+  const zt = q(".ui-target");
+  Object.assign(zt.style, { left: dive.x + dive.w / 2 - zw / 2 + "px", top: dive.y + dive.h / 2 - zh / 2 + "px", width: zw + "px", height: zh + "px" });
+  if (disc) zt.setAttribute("data-zoom-disc", disc);
 
   // ---------- motion ----------
   const move = q(".ui-move");
@@ -185,11 +204,22 @@ __RUNTIME__
   const rise = D.in ? { y: 200 / K, scale: 1.04, filter: "blur(6px)" } : { y: 520 / K, scale: 1.08, filter: "blur(14px)" };
   tl.fromTo(q(".ui-grid"), { y: 120 }, { y: 0, duration: 0.8, ease: "expo.out" }, 0)
     .fromTo(win, rise, { y: 0, scale: 1, filter: "blur(0px)", duration: 0.55, ease: "expo.out" }, 0);
-  // The camera establishes the whole window, then pushes in to each box in turn; a chip names it.
+  // Tall: the deep shadow that holds the small window against the ground eases back to the prototype's as the camera
+  // pushes in (scaled up, it would be a heavy grey band under the window).
+  if (!wide) {
+    tl.fromTo(win, { boxShadow: "rgba(15, 23, 42, 0.6) 0px 40px 120px 0px, rgba(15, 23, 42, 0.1) 0px 0px 0px 1px" },
+      { boxShadow: "rgba(15, 23, 42, 0.28) 0px 50px 140px 0px, rgba(15, 23, 42, 0.08) 0px 0px 0px 1px", duration: 0.6, ease: "power2.inOut", immediateRender: false }, focusStarts[0]);
+  }
+  // The camera establishes the whole window, then pushes in to each box in turn (tall: and pans across a wide one
+  // while it holds); a chip names it.
   let from = { x: 0, y: 0, scale: 1 };
-  shots.forEach((to, k) => {
-    tl.fromTo(move, from, { ...to, duration: 0.6, ease: "power2.inOut", immediateRender: false }, focusStarts[k]);
-    from = to;
+  plans.forEach((p, k) => {
+    tl.fromTo(move, from, { ...p.from, duration: 0.6, ease: "power2.inOut", immediateRender: false }, focusStarts[k]);
+    from = p.from;
+    if (pans[k]) {
+      tl.fromTo(move, p.from, { ...p.to, duration: pans[k].duration, ease: "sine.inOut", immediateRender: false }, pans[k].t0);
+      from = p.to;
+    }
   });
   const chipAt = (k) => chips.find((c) => Number(c.dataset.focus) === k);
   data.focus.forEach((_, k) => {
@@ -200,9 +230,10 @@ __RUNTIME__
     const next = data.focus.findIndex((f, j) => j > k && chipAt(j));
     if (next > k) tl.to(chip, { opacity: 0, y: -24, filter: "blur(8px)", duration: 0.18, ease: "power2.in" }, focusStarts[next]);
   });
-  // Eases back for the caption, and is at rest well before the scene's exit.
-  const tBack = captionAt - 0.15;
-  tl.fromTo(move, from, { ...back, duration: Math.max(0.2, Math.min(0.7, REST - tBack)), ease: "power2.inOut", immediateRender: false }, tBack);
+  // Eases back for the caption, and is at rest by end - 0.45, when the exits take over.
+  tl.fromTo(move, from, { ...back, duration: bk.duration, ease: "power2.inOut", immediateRender: false }, bk.t);
+  // Before a zoom exit the chip and the caption go: HyperFrames' motion blur redraws the diving camera above them.
+  if (D.out === "zoom") tl.to(chips.concat(cap ? [cap] : []), { opacity: 0, filter: "blur(8px)", duration: 0.15, ease: "power2.in" }, end - 0.45);
 
   // The screen acts: classes flip and the change is animated. Opacity and position render their starting values up
   // front: a tween that waits (immediateRender: false) rewinds to whatever it first saw, and that may be the flipped
