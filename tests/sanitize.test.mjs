@@ -99,7 +99,7 @@ test("attribute values are decoded before URLs are judged", () => {
 
 test("only relative or local-image URLs survive", () => {
   const out = clean(`<img src="a/b.png"><img src="./c.png"><img src="data:image/png;base64,AAAA"><a href="#top">t</a><a href="page.html">p</a>`);
-  assert.equal(out.html, `<img src="a/b.png"><img src="./c.png"><img src="data:image/png;base64,AAAA"><a href="#top">t</a><a href="page.html">p</a>`);
+  assert.equal(out.html, `<img src="a/b.png"><img src="./c.png"><img src="data:image/png;base64,AAAA"><a href="#s-top">t</a><a href="page.html">p</a>`);
   assert.deepEqual(out.images, ["a/b.png", "./c.png"]);
 });
 
@@ -132,9 +132,9 @@ test("svg: scripts, animation of href, foreign content and external references",
   ]) assertInert(h);
   const keep = clean(`<svg viewBox="0 0 4 4"><defs><linearGradient id="g"><stop offset="0"/></linearGradient></defs><rect fill="url(#g)" width="4" height="4"/><use href="#g"/></svg>`);
   assert.ok(keep.html.includes('viewBox="0 0 4 4"') && keep.html.includes("linearGradient"), keep.html);
-  assert.ok(keep.html.includes('fill="url(#g)"') && keep.html.includes('href="#g"'), keep.html);
+  assert.ok(keep.html.includes('id="s-g"') && keep.html.includes('fill="url(#s-g)"') && keep.html.includes('href="#s-g"'), keep.html);
   const bad = clean(`<svg><rect fill="url(https://x/a.svg#f)"/></svg>`);
-  assert.ok(bad.html.includes('fill="none"'), bad.html);
+  assert.equal(bad.html, "<svg><rect/></svg>");
 });
 
 test("self-closing svg shapes stay self-closing so siblings are not swallowed", () => {
@@ -214,10 +214,9 @@ test("style blocks: comments, escapes, strings and more at-rules", () => {
 
 test("style blocks: junk, nesting and stray braces do not leak", () => {
   assertInert(`<style>}}{{ a{b:c} ;; {x:1} d</style>`);
-  const nested = clean(`<style>.a{color:red; .b{background:url(//x/y.png)}}</style>`);
-  assert.ok(!nested.css.includes("//x"), nested.css);
-  assert.ok(nested.css.startsWith(".s .a{"), nested.css);
-  assertInert(`<style>a{b:xurl(} z{c:d)}</style>`);
+  assert.throws(() => clean(`<style>.a{color:red; .b{background:url(//x/y.png)}}</style>`), /screen: nested CSS rules are not allowed/);
+  // a function the browser would read across the "}" is refused rather than emitted unbalanced
+  assert.throws(() => clean(`<style>a{b:xurl(} z{c:d)}</style>`), /screen: unsafe CSS/);
 });
 
 test("scopeCss handles comma lists, functions, strings and root-like selectors", () => {
@@ -246,4 +245,151 @@ test("every removal is reported in plain words", () => {
   const out = clean(`<script>1</script><a href="javascript:1" onclick="1">x</a><div style="background:url(//x)"></div>`);
   assert.ok(out.removed.length >= 4);
   assert.ok(out.removed.every((r) => typeof r === "string" && r.length > 3));
+});
+
+// ---- security review fixes (task-3-security-findings.md) ----
+
+const VOID_TAGS = new Set(["br", "hr", "img"]);
+// Walks the emitted tags with a stack: every end tag must close the current element and nothing may stay open.
+function assertBalanced(html, label = html) {
+  const stack = [];
+  for (const m of html.matchAll(/<(\/?)([A-Za-z][A-Za-z0-9]*)\b[^>]*?(\/?)>/g)) {
+    const [, end, name, self] = m;
+    if (end) {
+      assert.equal(stack.pop(), name, `unbalanced </${name}> in ${label}: ${html}`);
+    } else if (!VOID_TAGS.has(name) && !self) stack.push(name);
+  }
+  assert.deepEqual(stack, [], `left open in ${label}: ${html}`);
+}
+const DATA_OK = new Set(["data-pop", "data-was", "data-now"]);
+function assertNoForeignData(html, label = html) {
+  for (const m of html.matchAll(/\s(data-[A-Za-z0-9_.:-]*)=/g)) assert.ok(DATA_OK.has(m[1]), `${m[1]} kept in ${label}: ${html}`);
+}
+
+test("bypass 1: only allowlisted attributes survive, data-* only for the ui hooks", () => {
+  const out = clean(`<div data-composition-src="http://x/c.html" data-start="0" data-duration="9" data-var-src="v.json" data-composition-file="c.html" data-field="scenes[0].x" data-zoom-target="1" data-composition-id="s1" attributionsrc="https://x/a" data-pop="1" data-was="a" data-now="b" title="t" aria-label="l" role="note">t</div>`
+    + `<div data-composition-src="compositions/evil.html">p</div><svg><use href="#a" xlink:onload="alert(1)"/><rect onload="x" fill="red"/></svg><button type="submit" form="f" formaction="x" name="n" value="v">b</button>`);
+  for (const bad of ["data-composition", "data-start", "data-duration", "data-var-src", "data-field", "data-zoom-target", "attributionsrc", "onload", "evil.html", "type=", "form=", "name=", "value="]) {
+    assert.ok(!out.html.includes(bad), `still has ${bad}: ${out.html}`);
+  }
+  assert.ok(out.html.includes('data-pop="1" data-was="a" data-now="b" title="t" aria-label="l" role="note"'), out.html);
+  assert.ok(out.html.includes('fill="red"'), out.html);
+  assertNoForeignData(out.html);
+});
+
+test("bypass 2: nested CSS rules and nesting/scope selectors are rejected", () => {
+  assert.throws(() => clean(`<style>.t{ :not(&){color:red} }</style>`), /screen: nested CSS rules are not allowed/);
+  assert.throws(() => clean(`<style>.t{color:red; .u{color:blue}}</style>`), /screen: nested CSS rules are not allowed/);
+  for (const sel of ["html:has(&)", "& p", ".a &", ":scope", ":scope > p", ":host", ":host(.x) p", ":host-context(body) p", ".a:not(&)"]) {
+    assert.throws(() => clean(`<style>${sel}{color:red}</style>`), /screen: selector ".*" reaches outside the screen/, sel);
+  }
+  assert.ok(!clean(`<div style="color:red;.x{color:blue}">k</div>`).html.includes("style="), "nested rule in a style attribute");
+});
+
+test("bypass 3: selectors may not start with a sibling combinator after the scope", () => {
+  for (const sel of ["~ p", "+ p", "~*", "body ~ x", "body + x", "html~*", "body.dark ~ x", ":root + *", "body:not(.a)~p", "body.a\\31 b~p", "|| p"]) {
+    assert.throws(() => clean(`<style>${sel}{color:red}</style>`), /screen: selector ".*" reaches outside the screen/, sel);
+  }
+  // shape of every emitted selector: the scope, then a space, ">", ".", ":", "[", "#" or the end, never a sibling first
+  const ok = ".a, p > b, body, html body p, body.dark .x, body:hover, body > p, :root, * , ::selection, [x=\"~\"], .a ~ .b, .a + .b, :is(.a, .b) ~ i, body:has(~ .x), #id, body#id p, :not(.a ~ .b)";
+  const css = clean(`<style>${ok}{color:red}</style>`).css;
+  const prelude = css.slice(0, css.indexOf("{"));
+  for (const sel of prelude.split(/,(?![^(]*\))(?![^[]*\])/)) {
+    assert.match(sel, /^\.s(?:$|[\s>.:[#])/, sel);
+    const rest = sel.slice(2).replace(/\([^)]*\)|\[[^\]]*\]/g, "()");
+    assert.doesNotMatch(rest, /^[^\s>~+]*\s*[~+]/, sel);
+  }
+});
+
+test("bypass 4: output markup is balanced and cannot close or swallow the wrapper", () => {
+  const cases = {
+    "</div></div><p>x": "<p>x</p>",
+    "<div>x": "<div>x</div>",
+    "<table><tr><td>x": "<table><tbody><tr><td>x</td></tr></tbody></table>",
+    "<svg><g><rect>": "<svg><g><rect></rect></g></svg>",
+    "<select><option>x</option></select>y": "y",
+    "<b><i>x</b>y</i>": "<b><i>x</i></b>y",
+    "<ul><li><div>a<li>b</ul>": "<ul><li><div>a</div></li><li>b</li></ul>",
+    "<p>a<div>b</div></p>": "<p>a</p><div>b</div>",
+    "<p><span>a<table><tr><td>b</td></tr></table>": "<p><span>a</span></p><table><tbody><tr><td>b</td></tr></tbody></table>",
+    "<h1>a<h2>b</h2></h1>": "<h1>a</h1><h2>b</h2>",
+    "<a href=\"#x\">a<a>b</a></a>": "<a href=\"#s-x\">ab</a>",
+    "<button>a<button>b</button></button>": "<button>ab</button>",
+    "<table><div>x</div>junk<tr><td>a</td></tr><td>b</td></table>": "<table><tbody><tr><td>a</td></tr></tbody></table>",
+    "<tr><td>loose</td></tr>": "loose",
+    "<table><table><tr><td>x</td></tr></table></table>": "<table><tbody><tr><td>x</td></tr></tbody></table>",
+    "<svg><div>x</div><title><b>t</b></title></svg>": "<svg>x<title>t</title></svg>",
+    "<blink>a</blink><font color=red>b</font><center>c</center>": "abc",
+    "<div/>x": "<div>x</div>",
+    "<math><mi>x</mi></math><textarea>y</textarea><noscript>z</noscript><template>t</template>ok": "ok",
+    "<svg><foreignObject><div>x</div></foreignObject><circle/></svg>": "<svg><circle/></svg>",
+    "<path d=\"M0\"/>x": "x",
+    "<embed src=a.png><object>o</object><iframe>i</iframe>z": "z",
+  };
+  for (const [input, want] of Object.entries(cases)) {
+    const out = clean(input);
+    assert.equal(out.html, want, input);
+    assertBalanced(out.html, input);
+  }
+  // a document wrapped around everything still yields balanced output
+  for (const h of ["<html><body><div><span>x</body></html>", "<div><table><tr><td><div>x</div></table>", "<svg><text>a<tspan>b</svg>"]) assertBalanced(clean(h).html, h);
+});
+
+test("bypass 5: only image files are collected", () => {
+  for (const src of ["a.html", "a.js", "a.png.html", "x.mjs", "page.htm", "a.css", "noext", "a.svgz"]) {
+    const out = clean(`<img src="${src}"><div style="background:url(${src})">k</div><style>.a{background:url("${src}")}</style>`);
+    assert.deepEqual(out.images, [], src);
+    assert.ok(!out.html.includes("<img"), src);
+    assert.ok(!out.html.includes(src) && !out.css.includes(src), `${src}: ${out.html} ${out.css}`);
+  }
+  const keep = clean(`<img src="a.png"><img src="b.JPG"><img src="c.jpeg"><img src="d.gif"><img src="e.webp"><img src="f.svg">`);
+  assert.deepEqual(keep.images, ["a.png", "b.JPG", "c.jpeg", "d.gif", "e.webp", "f.svg"]);
+});
+
+test("bypass 6: emitted CSS is self-contained or the screen is refused", () => {
+  for (const css of [`a{content:"abc}`, `a{content:'x`, `a{width:calc(1px}`, `a{x:[}`, `a{x:)}`, `a{x:]}`, `a{content:"a\\"}`, `a{x:y\\`]) {
+    assert.throws(() => clean(`<style>${css}</style>`), /screen: unsafe CSS/, css);
+  }
+  for (const style of [`content:'x`, `width:calc(1px`, `x:]`, `a:b}`, `content:"a\\"`]) {
+    assert.ok(!clean(`<div style="${style.replace(/"/g, "&quot;")}">k</div>`).html.includes("style="), style);
+  }
+});
+
+test("bypass 7: ids are prefixed, references follow, template class names are removed", () => {
+  const out = clean(`<div id="root" class="scene-data clip hero cam hook-line title-x ui-a terminal-b counter-c compare-d list-e end-cta zoom-z screen-s1 Root keep">k</div>`
+    + `<a href="#top">t</a><a href="#">h</a><svg><defs><linearGradient id="g"/><clipPath id="c"/><mask id="m"/></defs><rect fill="url(#g)" stroke="url(#g) red" clip-path="url(#c)" mask="url(#m)"/><use href="#g" xlink:href="#g"/></svg>`
+    + `<div aria-labelledby="root other" id="bad id">x</div>`
+    + `<style>#root{color:red} .k #g{fill:url(#g)} [data-x="#y"]{color:blue}</style><div style="filter:url(#c)">f</div>`);
+  assert.ok(out.html.includes('<div id="s-root" class="keep">'), out.html);
+  for (const want of ['href="#s-top"', 'href="#"', 'id="s-g"', 'id="s-c"', 'id="s-m"', 'fill="url(#s-g)"', 'stroke="url(#s-g) red"', 'clip-path="url(#s-c)"', 'mask="url(#s-m)"', '<use href="#s-g" xlink:href="#s-g"/>', 'aria-labelledby="s-root s-other"', 'style="filter:url(#s-c)"']) {
+    assert.ok(out.html.includes(want), `${want}: ${out.html}`);
+  }
+  assert.ok(!out.html.includes("bad id"), out.html);
+  assert.ok(out.css.includes(".s #s-root{color:red}") && out.css.includes(".s .k #s-g{fill:url(#s-g)}") && out.css.includes('.s [data-x="#y"]'), out.css);
+  for (const bad of [/\bclass="[^"]*\b(?:scene-data|clip|hero|cam|hook-|title-|ui-|terminal-|counter-|compare-|list-|end-|zoom-|screen-)/, /id="root"/]) assert.doesNotMatch(out.html, bad);
+  // fragments that are not plain ids, and fill urls that leave the document, are dropped
+  const odd = clean(`<a href="#a b">x</a><svg><rect fill="url(a.svg#g)" stroke="url('#g')"/><use href="a.svg#g"/></svg><div style="background:url(#a.b)">y</div>`);
+  assert.ok(!/href=|fill=|stroke=|a\.svg|#a\.b/.test(odd.html), odd.html);
+});
+
+test("bypass 8: position fixed and sticky become absolute; display:contents is dropped", () => {
+  const out = clean(`<div style="position:fixed;top:0">a</div><div style="position: STICKY !important">b</div><div style="position:var(--p)">c</div><div style="display:contents">d</div>`
+    + `<style>body{position:fixed} .a{position:-webkit-sticky;left:0} .b{position:relative} .c{display:contents} .d{display:var(--x)}</style>`);
+  assert.ok(!/fixed|sticky|var\(--p|contents|var\(--x/i.test(out.html + out.css), out.html + out.css);
+  assert.ok(out.html.includes('style="position:absolute;top:0"') && out.html.includes('style="position:absolute!important"') && out.html.includes('style="position:absolute"'), out.html);
+  assert.ok(out.css.includes(".s{position:absolute}") && out.css.includes(".s .a{position:absolute;left:0}") && out.css.includes(".s .b{position:relative}"), out.css);
+});
+
+test("structural: hostile mixes always give balanced markup with only allowlisted data-*", () => {
+  const parts = ["<div>", "</div>", "<p>", "</p>", "<li>", "<ul>", "</ul>", "<table>", "<tr>", "<td>", "</td>", "</table>", "<svg>", "<g>", "</svg>", "<rect/>", "<title>",
+    "</title>", "<b>", "</b>", "<a href=#x>", "</a>", "<button>", "<h1>", "<h2>", "<select>", "<math>", "x", " ", "<span data-start=1 data-pop=1>", "</span>", "<img src=a.png>", "<br>", "<pre>"];
+  let seed = 7;
+  const rnd = (k) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % k; };
+  for (let n = 0; n < 3000; n++) {
+    let h = "";
+    for (let k = 0; k < 14; k++) h += parts[rnd(parts.length)];
+    const out = clean(h);
+    assertBalanced(out.html, h);
+    assertNoForeignData(out.html, h);
+  }
 });

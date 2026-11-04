@@ -63,8 +63,9 @@ function copyInto(projectDir, src, rel) {
 
 // A rebuilt HTML screen for a `ui` scene: sanitized, its CSS scoped to .screen-<id>, its images copied into
 // assets/screens/ and every reference rewritten to the copy. `markup` is the screen inside its own .screen-<id> wrapper,
-// which clips and contains its paint so nothing in the screen can draw outside it; `style` is the screen's CSS in an
-// <style> element of its own, never merged into the scene's stylesheet.
+// which clips and contains its paint so nothing in the screen can draw outside it (inline !important, so no rule in the
+// screen's CSS can undo it); `style` is the screen's CSS in an <style> element of its own, never merged into the
+// scene's stylesheet.
 export function prepareScreen(scene, id, { baseDir, projectDir, field = "html" }) {
   const file = resolve(baseDir, scene.html);
   const { html: cleanHtml, css: cleanCss, images } = sanitizeScreen(readFileSync(file, "utf8"), `screen-${id}`);
@@ -77,7 +78,7 @@ export function prepareScreen(scene, id, { baseDir, projectDir, field = "html" }
     html = html.replaceAll(`="${escAttr(path)}"`, `="${rel}"`).replaceAll(escAttr(`url(${cssString(path)})`), escAttr(`url("${rel}")`));
     css = css.replaceAll(`url(${cssString(path)})`, `url("${rel}")`);
   });
-  const markup = `<div class="screen-${id}" style="position:relative;overflow:clip;contain:paint">${html}</div>`;
+  const markup = `<div class="screen-${id}" style="position:relative!important;overflow:clip!important;contain:paint!important">${html}</div>`;
   const style = css ? `<style>${css}</style>` : "";
   return { html, css, markup, style };
 }

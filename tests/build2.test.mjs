@@ -180,7 +180,7 @@ test("a rebuilt screen is sanitized, scoped and its images copied into the proje
   assert.ok(screen.html.includes('<img src="assets/screens/s3-1.png">'), screen.html);
   assert.ok(!screen.html.includes("onclick") && !screen.html.includes("script"));
   assert.ok(screen.css.includes('.screen-s3 .top{background:url("assets/screens/s3-2.svg")}'), screen.css);
-  assert.ok(screen.markup.startsWith('<div class="screen-s3" style="position:relative;overflow:clip;contain:paint"><div class="top">'), screen.markup);
+  assert.ok(screen.markup.startsWith('<div class="screen-s3" style="position:relative!important;overflow:clip!important;contain:paint!important"><div class="top">'), screen.markup);
   assert.equal(screen.style, `<style>${screen.css}</style>`, "the screen's CSS gets its own <style> element");
   assert.equal(readFileSync(join(project, "assets/screens/s3-1.png"), "utf8"), "png");
   assert.equal(readFileSync(join(project, "assets/screens/s3-2.svg"), "utf8"), "<svg/>");

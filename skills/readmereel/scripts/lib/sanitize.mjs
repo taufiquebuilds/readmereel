@@ -2,38 +2,83 @@
 //
 // Approach: the HTML is tokenised by a small parser that follows the HTML
 // tokenizer rules for tag names, attributes, comments and raw-text elements,
-// and the markup is then REBUILT from the parsed pieces (known tag name,
-// decoded + re-escaped attribute values). Nothing the agent typed is copied
-// through verbatim, so what the browser later parses is exactly what was
-// checked here. CSS gets the same treatment: comments stripped, escapes
-// normalised, every url() re-written to a checked canonical form, and a final
-// conservative scan that fails closed.
+// and the markup is then REBUILT from the parsed pieces. Everything is an
+// allowlist: element names (by context: HTML, or SVG inside <svg>), attribute
+// names per element (data-* only for the ui template's hooks) and their values.
+// An open-element stack keeps the output balanced: stray end tags are dropped,
+// the closes the browser would imply are written out, table parts appear only
+// where the browser takes them as written, and everything is closed at the end,
+// so a screen can neither close its wrapper nor swallow what follows it. Ids are
+// prefixed with the scope and template class names are removed.
+// CSS: comments stripped, escapes normalised, no at-rules and no nested rules,
+// every url() re-written to a checked canonical form, every selector scoped and
+// checked to stay inside the screen, position:fixed/sticky made absolute, and a
+// final scan that fails closed (strings terminated, brackets balanced).
 //
 // No dependencies. This is a defence for generated demo screens that are
 // rendered to video, not a general-purpose sanitiser for untrusted web pages.
 
 const REJECTED_AT_RULE = (name) => new Error(`screen: @${name} is not allowed`);
 
-// ---------------------------------------------------------------- HTML tables
+// ---------------------------------------------------------------- allowlists
 
-// Elements whose content is raw text for the browser. They are always dropped
-// (or, for <style>, extracted), so raw-text parsing can never be re-created
-// from the output.
+// Only these elements are kept. Anything else loses its tag but keeps its text, except the elements below whose
+// content is dropped with them. SVG names are emitted in their canonical case.
+const HTML_ELEMENTS = new Set([
+  "div", "span", "p", "h1", "h2", "h3", "h4", "h5", "h6", "ul", "ol", "li", "section", "header", "footer", "main", "nav",
+  "aside", "article", "figure", "figcaption", "strong", "em", "b", "i", "u", "small", "code", "pre", "kbd", "mark", "sup",
+  "sub", "br", "hr", "img", "button", "label", "a", "table", "thead", "tbody", "tfoot", "tr", "th", "td",
+]);
+const SVG_ELEMENTS = new Map([
+  "svg", "g", "path", "rect", "circle", "ellipse", "line", "polyline", "polygon", "text", "tspan", "defs", "linearGradient",
+  "radialGradient", "stop", "clipPath", "mask", "use", "title",
+].map((n) => [n.toLowerCase(), n]));
+const VOID = new Set(["br", "hr", "img"]);
+// Raw-text elements: their content is text for the browser, so it is skipped up to the matching end tag.
+// (<style> is extracted, never emitted.)
 const RAW_TEXT = new Set(["script", "style", "iframe", "noembed", "noframes", "noscript", "xmp", "textarea", "title", "plaintext"]);
-// Elements removed together with everything inside them.
-const DROP_WITH_CONTENT = new Set(["object", "form", "template", "applet", "frameset", "portal", "video", "audio", "math"]);
-// Elements removed on their own (void or without useful content).
-const DROP_TAG_ONLY = new Set([
-  "link", "meta", "base", "input", "embed", "param", "source", "track", "frame", "isindex",
-  "animate", "animatetransform", "animatemotion", "set", "discard", "handler", "listener",
+// Removed together with everything inside them.
+const DROP_WITH_CONTENT = new Set([
+  "object", "form", "template", "applet", "frameset", "portal", "video", "audio", "math", "select", "foreignobject",
 ]);
-const SILENT_STRUCTURE = new Set(["html", "head"]);
+const DOCUMENT = new Set(["html", "head", "body"]);
 
-const BANNED_ATTRS = new Set([
-  "srcdoc", "formaction", "srcset", "imagesrcset", "action", "data", "poster", "background", "ping", "cite",
-  "longdesc", "manifest", "codebase", "lowsrc", "dynsrc", "profile", "archive", "classid", "code", "usemap",
-  "xml:base", "is", "http-equiv",
+// Table parts only where the browser takes them as written (no foster parenting, no implied cells or rows).
+const TABLE_CONTEXT = new Set(["table", "thead", "tbody", "tfoot", "tr"]);
+const SECTIONS = new Set(["thead", "tbody", "tfoot"]);
+// Start tags that make the browser close an open <p> in button scope (the allowlisted part of the HTML spec's list).
+const CLOSES_P = new Set([
+  "article", "aside", "div", "figcaption", "figure", "footer", "header", "main", "nav", "ol", "p", "section", "ul",
+  "h1", "h2", "h3", "h4", "h5", "h6", "pre", "li", "table", "hr",
 ]);
+const HEADINGS = new Set(["h1", "h2", "h3", "h4", "h5", "h6"]);
+const BUTTON_SCOPE = new Set(["button", "table", "td", "th"]);
+// "Special" elements that stop the browser's search for an open <li>.
+const SPECIAL = new Set([
+  "article", "aside", "button", "div", "figcaption", "figure", "footer", "header", "main", "nav", "ol", "p", "pre", "section",
+  "ul", "li", "table", "thead", "tbody", "tfoot", "tr", "td", "th", "h1", "h2", "h3", "h4", "h5", "h6",
+]);
+
+const GENERAL_ATTRS = new Set(["class", "id", "style", "title", "alt", "width", "height", "role", "colspan", "rowspan"]);
+// The ui template's state hooks; no other data-* attribute is kept (HyperFrames reads data-composition-src, data-start ...).
+const DATA_ATTRS = new Set(["data-pop", "data-was", "data-now"]);
+const ARIA_IDREFS = new Set(["aria-labelledby", "aria-describedby", "aria-controls", "aria-owns", "aria-activedescendant", "aria-details", "aria-errormessage", "aria-flowto"]);
+const SVG_ATTRS = new Map([
+  "viewBox", "d", "fill", "fill-opacity", "fill-rule", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin",
+  "stroke-dasharray", "stroke-dashoffset", "stroke-opacity", "stroke-miterlimit", "opacity", "cx", "cy", "r", "rx", "ry",
+  "fx", "fy", "x", "y", "dx", "dy", "x1", "y1", "x2", "y2", "points", "transform", "gradientUnits", "gradientTransform",
+  "offset", "stop-color", "stop-opacity", "clip-path", "clip-rule", "mask", "preserveAspectRatio", "text-anchor",
+  "dominant-baseline", "font-size", "font-family", "font-weight",
+].map((n) => [n.toLowerCase(), n]));
+// Presentation attributes are parsed as CSS: a plain character set leaves no room for escapes, comments or strings.
+const SVG_VALUE = /^[A-Za-z0-9 \t\n#%.,()+_-]*$/;
+const URL_ATTRS = new Set(["fill", "stroke", "clip-path", "mask"]);
+const FRAGMENT_URL = /url\(\s*#([A-Za-z0-9_-]+)\s*\)/gi;
+const ID = /^[A-Za-z0-9_-]+$/;
+// Names the scene templates and the runtime use; a screen may not wear them.
+const RESERVED_CLASS = new Set(["root", "scene-data", "clip", "hero", "cam"]);
+const RESERVED_CLASS_PREFIX = /^(?:hook|title|ui|terminal|counter|compare|list|end|zoom|screen)-/;
+const IMAGE_FILE = /\.(?:png|jpe?g|gif|webp|svg)$/i;
 
 const NAMED_ENTITIES = {
   amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", colon: ":", tab: "\t", newline: "\n", nbsp: "\u00a0",
@@ -84,8 +129,8 @@ function classifyUrl(raw) {
   return { ok: true, kind: "local", value: v };
 }
 
-// A local value that will be copied as a file must be a plain path.
-const isFilePath = (v) => !/[?#]/.test(v);
+// A local value that will be copied as a file must be a plain path to an image file.
+const isImageFile = (v) => !/[?#]/.test(v) && IMAGE_FILE.test(v);
 
 // ------------------------------------------------------------------ CSS text
 
@@ -175,6 +220,11 @@ function cssUnescape(s) {
 
 export const cssString = (v) => `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "").replace(/</g, "\\3c ")}"`;
 
+// A lone "\\" at the very end would escape whatever is written after the CSS (our own closing brace).
+function assertNoTrailingEscape(css) {
+  if (/(?:^|[^\\])(?:\\\\)*\\$/.test(css)) throw new Error("screen: unsafe CSS");
+}
+
 function assertNoAtRules(css) {
   for (let i = 0; i < css.length; i = step(css, i)) {
     if (css[i] === "@") throw REJECTED_AT_RULE((/^[-\w\\]*/.exec(css.slice(i + 1))[0] || "").toLowerCase());
@@ -193,11 +243,13 @@ function rewriteUrls(text, ctx) {
       const parsed = parseUrlFunction(text, i);
       if (parsed.ok) {
         const cls = classifyUrl(cssUnescape(parsed.raw));
-        if (cls.ok && (cls.kind !== "local" || isFilePath(cls.value))) {
+        if (cls.ok && cls.kind === "fragment" && ID.test(cls.value.slice(1))) {
+          out += `url(#${ctx.scope}-${cls.value.slice(1)})`;
+        } else if (cls.ok && (cls.kind === "data" || (cls.kind === "local" && isImageFile(cls.value)))) {
           if (cls.kind === "local") ctx.images.push(cls.value);
-          out += cls.kind === "fragment" && /^#[A-Za-z0-9_-]+$/.test(cls.value) ? `url(${cls.value})` : `url(${cssString(cls.value)})`;
+          out += `url(${cssString(cls.value)})`;
         } else {
-          ctx.removed.push(`${cls.why ?? "unsafe"} url() in ${ctx.where}`);
+          ctx.removed.push(`${cls.ok ? (cls.kind === "local" ? "non-image file" : "odd fragment") : cls.why ?? "unsafe"} url() in ${ctx.where}`);
           out += "none";
         }
       } else {
@@ -245,41 +297,40 @@ function sanitizeDeclaration(text, ctx) {
   const value = text.slice(colon + 1);
   if (BANNED_PROPS.has(prop)) { ctx.removed.push(`${prop} property in ${ctx.where}`); return ""; }
   if (BANNED_VALUE.test(value.toLowerCase().replace(/\s+/g, ""))) { ctx.removed.push(`script or external-load value for ${prop} in ${ctx.where}`); return ""; }
+  const flat = value.toLowerCase().replace(/\s+/g, " ").trim();
+  const important = /!\s*important$/.test(flat);
+  // Nothing in the screen may be positioned against the page: fixed and sticky (and anything computed) become absolute,
+  // which the wrapper (position:relative; contain:paint) contains.
+  if (prop === "position" && !/^(?:static|relative|absolute)$/.test(flat.replace(/!\s*important$/, "").trim())) {
+    ctx.removed.push(`position:${flat} in ${ctx.where} (now absolute)`);
+    return `${text.slice(0, colon)}:absolute${important ? "!important" : ""}`;
+  }
+  // display:contents would take the wrapper's box (and with it the clip) away.
+  if (prop === "display" && /contents|var\(|env\(|attr\(/.test(flat)) { ctx.removed.push(`display:${flat} in ${ctx.where}`); return ""; }
   return `${text.slice(0, colon)}:${rewriteUrls(value, ctx)}`.replace(/\s+$/, "");
 }
 
-// Sanitises the inside of a { } block (declarations and nested rules).
+// Sanitises the inside of a { } block: declarations only. Nested rules (and with them "&") are refused, because a
+// nested selector is not scoped and can reach anything (".t{ :not(&){...} }").
 function sanitizeBlock(body, ctx) {
+  for (let i = 0; i < body.length; i = step(body, i)) {
+    if (body[i] === "{" || body[i] === "}") throw new Error("screen: nested CSS rules are not allowed");
+  }
   let out = "";
   let i = 0;
   while (i < body.length) {
     let j = i;
     let depth = 0;
-    let kind = "decl";
     while (j < body.length) {
       const c = body[j];
       if (c === "(" || c === "[") depth++;
       else if (c === ")" || c === "]") depth = Math.max(0, depth - 1);
       else if (depth === 0 && c === ";") break;
-      else if (depth === 0 && c === "{") { kind = "rule"; break; }
       j = step(body, j);
     }
-    if (kind === "rule") {
-      let k = j + 1;
-      let braces = 1;
-      while (k < body.length) {
-        const c = body[k];
-        if (c === "{") braces++;
-        else if (c === "}") { braces--; if (braces === 0) break; }
-        k = step(body, k);
-      }
-      out += `${body.slice(i, j)}{${sanitizeBlock(body.slice(j + 1, k), ctx)}}`;
-      i = k + 1;
-    } else {
-      const decl = sanitizeDeclaration(body.slice(i, j), ctx);
-      out += decl + (decl && j < body.length ? ";" : "");
-      i = j + 1;
-    }
+    const decl = sanitizeDeclaration(body.slice(i, j), ctx);
+    out += decl + (decl && j < body.length ? ";" : "");
+    i = j + 1;
   }
   return out;
 }
@@ -322,8 +373,62 @@ function splitSelectors(prelude) {
 
 const ROOTISH = /^(?:html|body|:root)(?![A-Za-z0-9_\-\\\u0080-\uffff])/i;
 
+// End of a CSS escape that starts at s[i] ("\"): up to six hex digits and one optional whitespace, or one character.
+function escapeEnd(s, i) {
+  const hex = /^[0-9a-fA-F]{1,6}/.exec(s.slice(i + 1, i + 7));
+  if (!hex) return Math.min(s.length, i + 2);
+  const j = i + 1 + hex[0].length;
+  return j < s.length && /[ \t\n\f]/.test(s[j]) ? j + 1 : j;
+}
+
+// Same length as s, with strings and escapes blanked out, so structure can be read without being fooled by them.
+function maskCss(s) {
+  let out = "";
+  for (let i = 0; i < s.length;) {
+    const c = s[i];
+    const e = c === '"' || c === "'" ? skipString(s, i) : c === "\\" ? escapeEnd(s, i) : i;
+    if (e > i) { out += "_".repeat(e - i); i = e; } else { out += c; i++; }
+  }
+  return out;
+}
+
+// "#name" (outside strings and [attribute] tests) -> "#<scope>-name", to follow the prefixed ids in the markup.
+function prefixIds(selector, scopeClass) {
+  const m = maskCss(selector);
+  let out = "";
+  let brackets = 0;
+  for (let i = 0; i < selector.length; i++) {
+    if (m[i] === "[") brackets++;
+    else if (m[i] === "]") brackets = Math.max(0, brackets - 1);
+    out += selector[i];
+    if (m[i] === "#" && brackets === 0 && /[A-Za-z0-9_\-\\\u0080-\uffff]/.test(selector[i + 1] ?? "")) out += `${scopeClass}-`;
+  }
+  return out;
+}
+
+const outside = (selector) => new Error(`screen: selector "${selector}" reaches outside the screen`);
+
+// A scoped selector must start with the scope's own compound (".scope" then a space, ">", ".", ":", "[", "#" or the
+// end) and its first combinator may only go down (descendant or child), never to a sibling ("~", "+") or a column.
+function assertInside(scoped, dot, original) {
+  const m = maskCss(scoped);
+  if (!m.startsWith(dot) || !/^(?:$|[\s>.:[#])/.test(m.slice(dot.length))) throw outside(original);
+  let i = dot.length;
+  let depth = 0;
+  for (; i < m.length; i++) {
+    const c = m[i];
+    if (c === "(" || c === "[") depth++;
+    else if (c === ")" || c === "]") depth--;
+    else if (depth === 0 && /[\s>~+|]/.test(c)) break;
+  }
+  while (i < m.length && /\s/.test(m[i])) i++;
+  if (/[~+|]/.test(m[i] ?? "")) throw outside(original);
+}
+
 function scopeSelector(selector, scopeClass) {
   const dot = `.${scopeClass}`;
+  // Nesting and shadow/scoping pseudo-classes resolve against things outside the screen.
+  if (/&|:scope(?![A-Za-z0-9_-])|:host/i.test(maskCss(normaliseEscapes(selector)))) throw outside(selector);
   let rest = selector;
   let matched = false;
   for (;;) {
@@ -335,8 +440,10 @@ function scopeSelector(selector, scopeClass) {
     if (!chain) break;
     rest = rest.slice(chain[0].length);
   }
-  if (!matched) return `${dot} ${selector}`;
-  return dot + rest; // "" -> the screen itself; ".x"/":hover" -> same element; " p" / " > p" -> inside it
+  // "" -> the screen itself; ".x"/":hover" -> same element; " p" / " > p" -> inside it
+  const scoped = prefixIds(matched ? dot + rest : `${dot} ${selector}`, scopeClass);
+  assertInside(scoped, dot, selector);
+  return scoped;
 }
 
 export function scopeCss(css, scopeClass) {
@@ -352,6 +459,7 @@ export function scopeCss(css, scopeClass) {
 
 function sanitizeStylesheet(css, ctx) {
   const text = normaliseEscapes(stripComments(css.replace(/\r\n?/g, "\n").replace(/\0/g, "").replace(/<!--|-->/g, " ")));
+  assertNoTrailingEscape(text);
   assertNoAtRules(text);
   return parseRules(text)
     .filter((r) => r.prelude)
@@ -359,18 +467,38 @@ function sanitizeStylesheet(css, ctx) {
     .join(" ");
 }
 
-// Last line of defence: scans what is about to be emitted, treating everything
-// outside quoted strings as live. Fails closed.
+// Last line of defence: scans what is about to be emitted, treating everything outside quoted strings as live. Fails
+// closed: every string must be terminated and every (), [] and {} balanced, so the CSS cannot run on into whatever
+// follows it, and nothing that loads or runs may appear.
 function assertSafeCss(css) {
-  let outside = "";
+  const unsafe = () => new Error("screen: unsafe CSS");
+  const PAIR = { ")": "(", "]": "[", "}": "{" };
+  const open = [];
+  let live = "";
   for (let i = 0; i < css.length;) {
-    if (css[i] === '"' || css[i] === "'") { const e = skipString(css, i); outside += '""'; i = e; }
-    else if (css[i] === "\\") { outside += "  "; i += 2; }
-    else { outside += css[i]; i++; }
+    const c = css[i];
+    if (c === '"' || c === "'") {
+      let j = i + 1;
+      while (j < css.length && css[j] !== c && css[j] !== "\n" && css[j] !== "\f" && css[j] !== "\r") j += css[j] === "\\" ? 2 : 1;
+      if (j >= css.length || css[j] !== c) throw unsafe();
+      live += '""';
+      i = j + 1;
+    } else if (c === "\\") {
+      if (i + 1 >= css.length || /[\n\f\r]/.test(css[i + 1])) throw unsafe();
+      const e = escapeEnd(css, i);
+      live += " ".repeat(e - i);
+      i = e;
+    } else {
+      if (c === "(" || c === "[" || c === "{") open.push(c);
+      else if (c in PAIR && open.pop() !== PAIR[c]) throw unsafe();
+      live += c;
+      i++;
+    }
   }
-  const low = outside.toLowerCase();
-  if (low.includes("@") || /expression\s*\(|javascript:|vbscript:|livescript:|-moz-binding|behavior\s*:|image-set\s*\(|(?:^|[^a-z0-9])src\s*\(|progid|url\s*\((?!\s*""|#[a-z0-9_-]+\))/.test(low)) {
-    throw new Error("screen: unsafe CSS");
+  if (open.length) throw unsafe();
+  const low = live.toLowerCase();
+  if (low.includes("@") || /expression\s*\(|javascript:|vbscript:|livescript:|-moz-binding|behavior\s*:|image-set\s*\(|(?:^|[^a-z0-9])src\s*\(|progid|url\s*\((?!\s*""\s*\)|#[a-z0-9_-]+\))/.test(low)) {
+    throw unsafe();
   }
 }
 
@@ -441,63 +569,92 @@ function skipElement(src, from, name) {
   return src.length;
 }
 
-function cleanAttributes(tag, attrs, ctx) {
+function cleanStyle(tag, value, ctx) {
+  const text = normaliseEscapes(stripComments(value.replace(/\r\n?/g, "\n").replace(/\0/g, "")));
+  assertNoTrailingEscape(text);
+  assertNoAtRules(text);
+  const cleaned = escapeLt(sanitizeBlock(text, { ...ctx, where: `style attribute on <${tag}>` }));
+  assertSafeCss(cleaned);
+  return cleaned;
+}
+
+// Keeps only allowlisted attributes, each with a checked value. Ids are prefixed with the scope (and so is every
+// same-document reference to them), so the screen can neither wear nor point at the scene's own ids.
+function cleanAttributes(tag, ns, attrs, ctx) {
   const out = [];
   const seen = new Set();
   let hasImageSource = false;
-  const drop = (msg) => ctx.removed.push(msg);
+  const drop = (msg) => ctx.removed.push(`${msg} on <${tag}>`);
+  const local = (id) => `${ctx.scope}-${id}`;
   for (const { name, value: rawValue } of attrs) {
     const lname = name.toLowerCase();
     if (seen.has(lname)) continue; // the browser keeps the first one
     seen.add(lname);
-    if (!/^[A-Za-z_:][A-Za-z0-9_:.\-]*$/.test(name)) { drop(`attribute with an invalid name on <${tag}>`); continue; }
-    if (lname.startsWith("on")) { drop(`${lname} event handler on <${tag}>`); continue; }
-    if (BANNED_ATTRS.has(lname)) { drop(`${lname} attribute on <${tag}>`); continue; }
     const value = decodeEntities(rawValue);
 
-    if (lname === "href" || lname === "xlink:href") {
-      const c = classifyUrl(value);
-      let ok = false;
-      if (c.ok && c.kind === "fragment") ok = true;
-      else if (c.ok && (tag === "a" || tag === "area")) ok = true;
-      else if (c.ok && tag === "image" && (c.kind === "data" || (c.kind === "local" && isFilePath(c.value)))) {
-        ok = true;
-        hasImageSource = true;
-        if (c.kind === "local") ctx.images.push(c.value);
-      }
-      if (ok) out.push([name, c.value]); else drop(`${c.why ?? "unsupported"} in ${lname} on <${tag}>`);
+    if (lname === "id") {
+      if (ID.test(value)) out.push(["id", local(value)]); else drop("id that is not a plain name");
       continue;
     }
-    if (lname === "src") {
-      const c = classifyUrl(value);
-      if ((tag === "img" || tag === "image") && c.ok && (c.kind === "data" || (c.kind === "local" && isFilePath(c.value)))) {
-        out.push([name, c.value]);
-        hasImageSource = true;
-        if (c.kind === "local") ctx.images.push(c.value);
-      } else drop(`${c.why ?? "unsupported"} in src on <${tag}>`);
+    if (lname === "class") {
+      const all = value.split(/[ \t\n\f\r]+/).filter(Boolean);
+      const keep = all.filter((c) => !RESERVED_CLASS.has(c.toLowerCase()) && !RESERVED_CLASS_PREFIX.test(c.toLowerCase()));
+      if (keep.length < all.length) drop(`template class names (${all.filter((c) => !keep.includes(c)).join(" ")})`);
+      if (keep.length) out.push(["class", keep.join(" ")]);
       continue;
     }
     if (lname === "style") {
-      try {
-        const sub = { ...ctx, where: `style attribute on <${tag}>` };
-        const text = normaliseEscapes(stripComments(value.replace(/\r\n?/g, "\n").replace(/\0/g, "")));
-        assertNoAtRules(text);
-        const cleaned = escapeLt(sanitizeBlock(text, sub));
-        assertSafeCss(cleaned);
-        out.push([name, cleaned]);
-      } catch {
-        drop(`unsafe style attribute on <${tag}>`);
+      try { out.push(["style", cleanStyle(tag, value, ctx)]); } catch { drop("unsafe style attribute"); }
+      continue;
+    }
+    if (ARIA_IDREFS.has(lname)) {
+      const ids = value.split(/[ \t\n\f\r]+/).filter((v) => ID.test(v));
+      if (ids.length) out.push([lname, ids.map(local).join(" ")]); else drop(`${lname} without plain ids`);
+      continue;
+    }
+    if (lname === "width" || lname === "height" || lname === "colspan" || lname === "rowspan") {
+      if (SVG_VALUE.test(value) && !/url\s*\(/i.test(value)) out.push([lname, value]); else drop(`odd ${lname} value`);
+      continue;
+    }
+    if (GENERAL_ATTRS.has(lname) || DATA_ATTRS.has(lname) || /^aria-[a-z]+$/.test(lname)) {
+      out.push([lname, value]);
+      continue;
+    }
+    if (lname === "href" && tag === "a") {
+      const c = classifyUrl(value);
+      if (c.ok && c.kind === "fragment" && (c.value === "#" || ID.test(c.value.slice(1)))) out.push(["href", c.value === "#" ? "#" : `#${local(c.value.slice(1))}`]);
+      else if (c.ok && c.kind === "local") out.push(["href", c.value]);
+      else drop(`${c.ok ? "unsupported link" : c.why} in href`);
+      continue;
+    }
+    if ((lname === "href" || lname === "xlink:href") && tag === "use") {
+      const c = classifyUrl(value);
+      if (c.ok && c.kind === "fragment" && ID.test(c.value.slice(1))) out.push([lname, `#${local(c.value.slice(1))}`]);
+      else drop(`${lname} that is not a same-document fragment`);
+      continue;
+    }
+    if (lname === "src" && tag === "img") {
+      const c = classifyUrl(value);
+      if (c.ok && (c.kind === "data" || (c.kind === "local" && isImageFile(c.value)))) {
+        out.push(["src", c.value]);
+        hasImageSource = true;
+        if (c.kind === "local") ctx.images.push(c.value);
+      } else drop(`${c.ok ? "not an image file" : c.why} in src`);
+      continue;
+    }
+    if (ns === "svg" && SVG_ATTRS.has(lname)) {
+      const canonical = SVG_ATTRS.get(lname);
+      if (!SVG_VALUE.test(value)) { drop(`odd ${canonical} value`); continue; }
+      if (/url\s*\(/i.test(value)) {
+        // Only paint and clip/mask references to an element of this screen.
+        if (!URL_ATTRS.has(lname) || /url\s*\(/i.test(value.replace(FRAGMENT_URL, ""))) { drop(`url() in ${canonical}`); continue; }
+        out.push([canonical, value.replace(FRAGMENT_URL, (m, id) => `url(#${local(id)})`)]);
+        continue;
       }
+      out.push([canonical, value]);
       continue;
     }
-    // Other attributes (SVG fill="url(...)", filter, mask, ...) can carry url().
-    const probe = normaliseEscapes(stripComments(value));
-    if (/url\s*\(|image-set\s*\(|expression\s*\(/i.test(probe)) {
-      if (BANNED_VALUE.test(probe.toLowerCase().replace(/\s+/g, ""))) { drop(`${lname} attribute on <${tag}>`); continue; }
-      out.push([name, rewriteUrls(probe, { ...ctx, where: `${lname} attribute on <${tag}>` })]);
-      continue;
-    }
-    out.push([name, value]);
+    drop(`${lname} attribute`);
   }
   return { attrs: out, hasImageSource };
 }
@@ -509,20 +666,39 @@ export function sanitizeScreen(html, scopeClass) {
   const removed = [];
   const images = [];
   const styles = [];
-  const ctx = { removed, images, where: "style" };
+  const ctx = { removed, images, where: "style", scope: scopeClass };
   const src = html.replace(/\0/g, "").replace(/\r\n?/g, "\n");
   const n = src.length;
 
+  // The output is rebuilt with an open-element stack that mirrors what the browser will build: an end tag is only
+  // emitted for an element that is open (after closing the ones inside it), the closes the browser would imply are
+  // written out explicitly first, and everything still open is closed at the end. So the markup can neither close the
+  // wrapper it is put in nor swallow the scene markup after it.
   let out = [];
+  let stack = []; // { name: as emitted, lname, ns: "html" | "svg" }
   let bodySeen = false;
-  let bodyDone = false;
-  const emit = (s) => { if (!bodyDone) out.push(s); };
+  const top = () => stack[stack.length - 1];
+  const closeTo = (k) => { while (stack.length > k) out.push(`</${stack.pop().name}>`); };
+  const push = (name, lname, ns) => stack.push({ name, lname, ns });
+  const text = (t) => {
+    if (!t) return;
+    const cur = top();
+    if (cur && TABLE_CONTEXT.has(cur.lname) && !/^[ \t\n\f\r]*$/.test(t)) { removed.push("text directly inside a table"); return; }
+    out.push(escText(t));
+  };
+  const pInButtonScope = () => {
+    for (let k = stack.length - 1; k >= 0; k--) {
+      if (stack[k].lname === "p") return k;
+      if (BUTTON_SCOPE.has(stack[k].lname) || stack[k].ns !== "html") return -1;
+    }
+    return -1;
+  };
 
   let i = 0;
   while (i < n) {
     const lt = src.indexOf("<", i);
-    if (lt < 0) { emit(escText(src.slice(i))); break; }
-    if (lt > i) emit(escText(src.slice(i, lt)));
+    if (lt < 0) { text(src.slice(i)); break; }
+    if (lt > i) text(src.slice(i, lt));
     i = lt;
     const next = src[i + 1] ?? "";
 
@@ -543,7 +719,7 @@ export function sanitizeScreen(html, scopeClass) {
     const isEnd = next === "/";
     if (!(isEnd ? /[A-Za-z]/.test(src[i + 2] ?? "") : /[A-Za-z]/.test(next))) {
       if (isEnd) { const gt = src.indexOf(">", i); i = gt < 0 ? n : gt + 1; } // bogus comment
-      else { emit("&lt;"); i++; }
+      else { text("<"); i++; }
       continue;
     }
 
@@ -553,49 +729,88 @@ export function sanitizeScreen(html, scopeClass) {
     const name = tok.name;
     if (!/^[A-Za-z][A-Za-z0-9:-]*$/.test(name)) { removed.push("tag with an invalid name"); continue; }
     const lname = name.toLowerCase();
-    const base = lname.includes(":") ? lname.slice(lname.lastIndexOf(":") + 1) : lname;
+    const cur = top();
+    const inSvg = cur?.ns === "svg";
 
     if (isEnd) {
-      if (base === "body") { if (bodySeen) bodyDone = true; continue; }
-      if (RAW_TEXT.has(base) || DROP_WITH_CONTENT.has(base) || DROP_TAG_ONLY.has(base) || SILENT_STRUCTURE.has(base)) continue;
-      emit(`</${name}>`);
+      if (lname === "body" && bodySeen) break; // nothing after </body> is used
+      let k = stack.length - 1;
+      while (k >= 0 && stack[k].lname !== lname) k--;
+      if (k >= 0) closeTo(k);
+      else if (!DOCUMENT.has(lname)) removed.push(`</${lname}> without an open element`);
       continue;
     }
 
-    if (base === "style") {
-      const raw = skipRaw(src, i, name.toLowerCase());
+    if (lname === "style") {
+      const raw = skipRaw(src, i, "style");
       styles.push(raw.content);
       i = raw.end;
       continue;
     }
-    if (RAW_TEXT.has(base)) {
-      removed.push(`<${base}> element`);
-      i = base === "plaintext" ? n : skipRaw(src, i, name).end;
+    // Inside <svg>, <title> is an element (but inside an svg <title> the browser reads tags as HTML again).
+    if (RAW_TEXT.has(lname) && !(lname === "title" && inSvg && cur.lname !== "title")) {
+      removed.push(`<${lname}> element`);
+      i = lname === "plaintext" ? n : skipRaw(src, i, lname).end;
       continue;
     }
-    if (DROP_WITH_CONTENT.has(base)) {
-      removed.push(`<${base}> element`);
-      i = skipElement(src, i, name);
+    if (DROP_WITH_CONTENT.has(lname)) {
+      removed.push(`<${lname}> element`);
+      if (!(inSvg && tok.selfClosing)) i = skipElement(src, i, name);
       continue;
     }
-    if (DROP_TAG_ONLY.has(base)) {
-      removed.push(`<${base}> tag`);
-      continue;
-    }
-    if (SILENT_STRUCTURE.has(base) || base === "body") {
-      cleanAttributes(base, tok.attrs, { ...ctx, removed }); // records onload etc.
-      if (base === "body" && !bodySeen) { bodySeen = true; out = []; } // keep only what is inside <body>
+    if (DOCUMENT.has(lname)) {
+      if (tok.attrs.length) removed.push(`attributes on <${lname}>`);
+      if (lname === "body" && !bodySeen) { bodySeen = true; out = []; stack = []; } // keep only what is inside <body>
       continue;
     }
 
-    const { attrs, hasImageSource } = cleanAttributes(lname, tok.attrs, ctx);
-    if ((base === "img" || base === "image") && !hasImageSource) {
-      removed.push(`<${base}> without a local or inline image`);
-      continue;
+    // Element allowlist, by context.
+    let tag;
+    let ns;
+    if (inSvg) {
+      // Only SVG shapes inside <svg> (an HTML tag there would break out of it), and only text inside an svg <title>.
+      if (cur.lname === "title" || !SVG_ELEMENTS.has(lname)) { removed.push(`<${lname}> tag inside <svg>`); continue; }
+      tag = SVG_ELEMENTS.get(lname);
+      ns = "svg";
+    } else if (lname === "svg") { tag = "svg"; ns = "svg"; }
+    else if (HTML_ELEMENTS.has(lname)) { tag = lname; ns = "html"; }
+    else { removed.push(`<${lname}> tag`); continue; }
+
+    if (!inSvg) {
+      // Table parts only in their own parent, and nothing else directly in a table: no foster parenting.
+      const parent = cur?.lname;
+      let impliedBody = false;
+      if (SECTIONS.has(tag) ? parent !== "table"
+        : tag === "tr" ? !(SECTIONS.has(parent) || (impliedBody = parent === "table"))
+        : tag === "td" || tag === "th" ? parent !== "tr"
+        : TABLE_CONTEXT.has(parent)) {
+        removed.push(`<${tag}> in the wrong place in a table`);
+        continue;
+      }
+      // Nested links and buttons are re-parented by the browser; keep only the outer one.
+      if ((tag === "a" || tag === "button") && stack.some((e) => e.lname === tag)) { removed.push(`nested <${tag}>`); continue; }
+      if (impliedBody) { out.push("<tbody>"); push("tbody", "tbody", "html"); }
+      // Write out the closes the browser would imply.
+      if (tag === "li") {
+        for (let k = stack.length - 1; k >= 0; k--) {
+          const e = stack[k].lname;
+          if (e === "li") { closeTo(k); break; }
+          if (SPECIAL.has(e) && e !== "div" && e !== "p") break;
+        }
+      }
+      if (CLOSES_P.has(tag)) { const k = pInButtonScope(); if (k >= 0) closeTo(k); }
+      if (HEADINGS.has(tag) && HEADINGS.has(top()?.lname)) closeTo(stack.length - 1);
     }
-    // Keep "/>": inside <svg> an unclosed <circle> would swallow its siblings.
-    emit(`<${name}${attrs.map(([k, v]) => ` ${k}="${escAttr(v)}"`).join("")}${tok.selfClosing ? "/" : ""}>`);
+
+    const { attrs, hasImageSource } = cleanAttributes(tag, ns, tok.attrs, ctx);
+    if (tag === "img" && !hasImageSource) { removed.push("<img> without a local or inline image"); continue; }
+    // In SVG "/>" closes the element (an unclosed <circle> would swallow its siblings); on an HTML element the browser
+    // ignores it, so it is only kept on void elements.
+    const selfClosed = VOID.has(tag) || (ns === "svg" && tok.selfClosing);
+    out.push(`<${tag}${attrs.map(([k, v]) => ` ${k}="${escAttr(v)}"`).join("")}${tok.selfClosing && selfClosed ? "/" : ""}>`);
+    if (!selfClosed) push(tag, lname, ns);
   }
+  closeTo(0);
 
   let css = "";
   if (styles.some((s) => s.trim())) {
