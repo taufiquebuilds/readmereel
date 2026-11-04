@@ -1,0 +1,77 @@
+<!doctype html>
+<html><head><meta charset="UTF-8" /></head><body><template>
+<style>
+  #root { position: absolute; inset: 0; overflow: hidden; background: var(--ground); display: flex; align-items: center; justify-content: center; font-family: "Inter", sans-serif; }
+  #root[data-tone="dark"] { --ink: #f5f6f8; --muted: #a3aab5; --track: rgba(255, 255, 255, 0.16); --mark: var(--accent-ink); }
+  #root[data-tone="light"] { --ink: #111418; --muted: #5b6470; --track: rgba(0, 0, 0, 0.12); --mark: var(--accent-ink); }
+  /* signal: the ground is the accent itself, so the index and its rule take the ink. */
+  #root[data-style="signal"] { --mark: var(--ink); }
+  #root[data-style="signal"][data-tone="dark"] { --muted: rgba(255, 255, 255, 0.86); --track: rgba(255, 255, 255, 0.28); }
+  #root[data-style="signal"][data-tone="light"] { --muted: rgba(0, 0, 0, 0.72); --track: rgba(0, 0, 0, 0.2); }
+  .list-stage { display: flex; flex-direction: column; align-items: center; }
+  .list-head { display: flex; align-items: center; gap: 26px; margin-bottom: 54px; font-family: "JetBrains Mono", monospace; font-size: 44px; font-weight: 500; line-height: 1; }
+  #root[data-layout="tall"] .list-head { margin-bottom: 72px; }
+  .list-index { display: inline-flex; color: var(--mark); font-variant-numeric: tabular-nums; }
+  .list-reel-mask { display: inline-block; height: 1.15em; clip-path: inset(0); }
+  .list-reel { display: block; }
+  .list-reel span { display: block; height: 1.15em; line-height: 1.15em; }
+  .list-index > span:first-child { line-height: 1.15em; }
+  .list-track { width: 132px; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
+  .list-fill { width: 100%; height: 100%; background: var(--mark); transform-origin: 0 50%; }
+  .list-of { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .list-slots { display: grid; justify-items: center; align-items: center; }
+  /* Every item sits in the same cell; it rises into and leaves through its own window (soft-edged while items move). */
+  .list-slot { grid-area: 1 / 1; padding: 0.2em 0; overflow: clip; }
+  .list-item { font-weight: 900; font-size: 150px; letter-spacing: -0.045em; line-height: 1.04; color: var(--ink); text-align: center; text-wrap: balance; }
+</style>
+<div id="root" data-composition-id="__ID__" data-width="__W__" data-height="__H__" data-layout="__LAYOUT__" data-style="__STYLE__">
+  <div class="list-stage">
+    <div class="list-head"><span class="list-index"><span>0</span><span class="list-reel-mask"><span class="list-reel"></span></span></span><span class="list-track"><span class="list-fill"></span></span><span class="list-of">__COUNT__</span></div>
+    <div class="list-slots">
+    __ITEMS__
+    </div>
+  </div>
+  <script type="application/json" class="scene-data">__DATA__</script>
+</div>
+<script>
+__RUNTIME__
+(() => {
+  const S = RR.scene("__ID__");
+  const { tl, D, q, qa, W, wide } = S;
+  const starts = D.beats.itemStarts;
+  const items = qa(".list-item");
+  const slots = qa(".list-slot");
+  const n = items.length;
+  // Sizes first (they read layout): each item balanced over at most 2 lines (wide) or 3 (tall).
+  items.forEach((el, k) => {
+    RR.fitLines(el, wide ? 150 : 112, Math.round(W * 0.84), wide ? 2 : 3);
+    slots[k].style.fontSize = el.style.fontSize;
+  });
+  const reel = q(".list-reel");
+  items.forEach((_, k) => { const d = document.createElement("span"); d.textContent = String(k + 1); reel.appendChild(d); });
+  const step = reel.firstChild.offsetHeight;
+  const fill = q(".list-fill");
+  tl.fromTo(fill, { scaleX: 0 }, { scaleX: 1 / n, duration: 0.5, ease: "expo.out" }, 0.15);
+  // Item 0 is on screen from the first frame (the scene's entrance brings it in); the others wait below their window.
+  items.slice(1).forEach((el) => tl.set(el, { opacity: 0 }, 0));
+  // The windows fade their top and bottom edges only while items pass through them (a resting item is never masked:
+  // HyperFrames' readability check counts masked text as hidden).
+  const FADE = "linear-gradient(to bottom, transparent 0, #000 0.18em, #000 calc(100% - 0.18em), transparent 100%)";
+  items.forEach((el, k) => {
+    if (k === 0) return;
+    const t = starts[k];
+    const pair = [slots[k - 1], slots[k]];
+    tl.set(pair, { maskImage: FADE, webkitMaskImage: FADE }, t - 0.16).set(pair, { maskImage: "none", webkitMaskImage: "none" }, t + 0.32);
+    // The previous item whips up out of its window as this one whips up into it, sharpening as it lands.
+    tl.to(items[k - 1], { yPercent: -110, filter: "blur(16px)", duration: 0.2, ease: "power3.in" }, t - 0.16)
+      .set(items[k - 1], { opacity: 0 }, t + 0.04)
+      .set(el, { opacity: 1 }, t)
+      .fromTo(el, { yPercent: 110, filter: "blur(16px)" }, { yPercent: 0, filter: "blur(0px)", duration: 0.3, ease: "expo.out" }, t)
+      // The index flicks to the next number like a slot machine; the rule fills one step.
+      .fromTo(reel, { y: -(k - 1) * step }, { y: -k * step, duration: 0.1, ease: "power2.out", immediateRender: false }, t - 0.02)
+      .fromTo(fill, { scaleX: k / n }, { scaleX: (k + 1) / n, duration: 0.4, ease: "expo.out", immediateRender: false }, t);
+  });
+  S.done();
+})();
+</script>
+</template></body></html>

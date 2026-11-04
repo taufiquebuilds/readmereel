@@ -101,6 +101,20 @@ var RR = (function () {
     el.style.fontSize = Math.max(28, Math.min(max, size)) + "px";
     if (size < 28 && o && o.wrap) Object.assign(el.style, { whiteSpace: "normal", overflowWrap: "anywhere", maxWidth: w + "px", textAlign: "center" });
   }
+  // Size wrapping text to at most `lines` lines inside a box w px wide: the largest size from `max` down (2 px steps,
+  // never below 28) at which no word sticks out and the text takes at most `lines` lines. Reads real layout (offset
+  // sizes, so transforms never count); call it before any tween touches the element. Pair with `text-wrap: balance`.
+  function fitLines(el, max, w, lines) {
+    Object.assign(el.style, { width: w + "px", maxWidth: w + "px", whiteSpace: "normal" });
+    for (let s = max; s >= 28; s -= 2) {
+      el.style.fontSize = s + "px";
+      const lh = parseFloat(getComputedStyle(el).lineHeight) || s * 1.2;
+      if (el.scrollWidth <= w + 1 && Math.round(el.offsetHeight / lh) <= lines) return s;
+    }
+    el.style.fontSize = "28px";
+    el.style.overflowWrap = "anywhere";
+    return 28;
+  }
   function type(tl, el, t, perChar) {
     const n = el.textContent.length;
     el.style.display = "inline-block"; el.style.overflow = "hidden"; el.style.whiteSpace = "nowrap"; el.style.verticalAlign = "bottom";
@@ -184,5 +198,5 @@ var RR = (function () {
       default: break; // flood, or the last scene: hold
     }
   }
-  return { T, scene, words, blurIn, roll, fit, type, centre, readable, contrast };
+  return { T, scene, words, blurIn, roll, fit, fitLines, type, centre, readable, contrast };
 })();

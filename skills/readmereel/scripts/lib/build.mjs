@@ -83,6 +83,13 @@ export function prepareScreen(scene, id, { baseDir, projectDir, field = "html" }
   return { html, css, markup, style };
 }
 
+const badge = (ctx) => (ctx.logo ? `<img src="${escapeHtml(ctx.logo)}" alt="">` : `<i class="glyph"></i>`);
+// A counter value as it lands: thousands separators, one decimal place only when the value has one.
+export function counterText(value) {
+  const decimals = Number.isInteger(value) ? 0 : 1;
+  return Number(value).toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+
 // Scene-specific slots. Tasks adding scene types add their entry here.
 const SLOTS = {
   hook: (s) => ({
@@ -90,11 +97,38 @@ const SLOTS = {
       .map((line, k) => `<div class="hook-line" data-field="scenes[${s.index}].lines[${k}]">${escapeHtml(line)}</div>`)
       .join("\n  "),
   }),
+  title: (s, ctx) => ({
+    NAME: escapeHtml(s.data.name),
+    PROMISE: escapeHtml(s.data.promise),
+    LOGO: badge(ctx),
+  }),
+  list: (s) => {
+    const items = s.data.items ?? [];
+    return {
+      ITEMS: items
+        .map((item, k) => `<div class="list-slot"><div class="list-item${k === items.length - 1 ? " hero" : ""}" data-field="scenes[${s.index}].items[${k}]">${escapeHtml(item)}</div></div>`)
+        .join("\n    "),
+      COUNT: String(items.length).padStart(2, "0"),
+    };
+  },
+  counter: (s) => ({
+    ITEMS: (s.data.items ?? [])
+      .map((it, k) => {
+        const f = `scenes[${s.index}].items[${k}]`;
+        const suffix = it.suffix ? `<span class="counter-suffix" data-field="${f}.suffix">${escapeHtml(it.suffix)}</span>` : "";
+        const note = it.note ? `\n      <div class="counter-note" data-field="${f}.note">${escapeHtml(it.note)}</div>` : "";
+        return `<div class="counter-item${k === 0 ? " hero" : ""}">
+      <div class="counter-label" data-field="${f}.label">${escapeHtml(it.label)}</div>
+      <div class="counter-figure"${k === 0 ? " data-zoom-target" : ""}><span class="counter-value" data-field="${f}.value">${counterText(it.value)}</span>${suffix}</div>${note}
+    </div>`;
+      })
+      .join("\n    "),
+  }),
   end: (s, ctx) => ({
     NAME: escapeHtml(s.data.name),
     INSTALL: escapeHtml(s.data.install),
     URL: escapeHtml(s.data.url),
-    LOGO: ctx.logo ? `<img src="${escapeHtml(ctx.logo)}" alt="">` : `<i class="glyph"></i>`,
+    LOGO: badge(ctx),
   }),
   ui: (s, ctx) => {
     if (!s.data.html) return {};
@@ -155,6 +189,7 @@ export function buildProject(story, layout, { baseDir, outDir, plan, sfxDir, tem
     if (!existsSync(file)) throw new Error(`no template for scene type "${s.type}" (scenes[${s.index}])`);
     const slots = {
       ID: s.id,
+      INDEX: s.index,
       W,
       H,
       LAYOUT: layout,

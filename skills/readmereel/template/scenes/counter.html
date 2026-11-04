@@ -1,0 +1,74 @@
+<!doctype html>
+<html><head><meta charset="UTF-8" /></head><body><template>
+<style>
+  #root { position: absolute; inset: 0; overflow: hidden; background: var(--ground); display: flex; align-items: center; justify-content: center; font-family: "Inter", sans-serif; }
+  #root[data-tone="dark"] { --ink: #f5f6f8; --muted: #a3aab5; --line: rgba(255, 255, 255, 0.14); }
+  #root[data-tone="light"] { --ink: #111418; --muted: #5b6470; --line: rgba(0, 0, 0, 0.12); }
+  .counter-row { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; align-items: center; }
+  #root[data-layout="tall"] .counter-row { grid-auto-flow: row; row-gap: 120px; }
+  .counter-item { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; }
+  .counter-rule { position: absolute; background: var(--line); }
+  #root[data-layout="wide"] .counter-rule { left: 0; top: 8%; bottom: 8%; width: 2px; transform-origin: 50% 0; }
+  #root[data-layout="tall"] .counter-rule { top: -60px; left: 50%; width: 220px; margin-left: -110px; height: 2px; transform-origin: 0 50%; }
+  .counter-label { font-weight: 600; font-size: 36px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); white-space: nowrap; line-height: 1.2; }
+  .counter-figure { display: flex; align-items: baseline; justify-content: center; margin: 18px 0 14px; font-weight: 900; font-size: 128px; letter-spacing: -0.04em; line-height: 1; color: var(--ink); white-space: nowrap; }
+  .counter-item:first-child .counter-figure { color: var(--accent-ink); }
+  .counter-value { display: inline-block; font-variant-numeric: tabular-nums; text-align: right; }
+  .counter-suffix { display: inline-block; font-size: 0.6em; margin-left: 0.06em; letter-spacing: -0.02em; }
+  .counter-note { font-weight: 600; font-size: 32px; color: var(--accent-ink); white-space: nowrap; line-height: 1.2; }
+</style>
+<div id="root" data-composition-id="__ID__" data-width="__W__" data-height="__H__" data-layout="__LAYOUT__" data-style="__STYLE__">
+  <div class="counter-row">
+    __ITEMS__
+  </div>
+  <script type="application/json" class="scene-data">__DATA__</script>
+</div>
+<script>
+__RUNTIME__
+(() => {
+  const S = RR.scene("__ID__");
+  const { tl, D, q, qa, W, wide } = S;
+  const starts = D.beats.itemStarts;
+  const data = D.data.items;
+  const items = qa(".counter-item");
+  const n = items.length;
+  // Sizes first (they read layout). Wide: equal columns across 88% of the frame; tall: stacked, 84% wide.
+  const rowW = Math.round(W * (wide ? 0.88 : 0.84));
+  const colW = wide ? Math.floor(rowW / n) - 60 : rowW;
+  q(".counter-row").style.width = rowW + "px";
+  const max = [180, 150, 128][n - 1];
+  // Every value in the film's row shares one size: the largest at which the longest one (with its suffix) fits.
+  const figures = items.map((it) => it.querySelector(".counter-figure"));
+  const size = Math.min(...figures.map((f) => { RR.fit(f, max, colW, 0.62); return parseFloat(f.style.fontSize); }));
+  figures.forEach((f) => { f.style.fontSize = size + "px"; });
+  items.forEach((it) => {
+    // Still too wide at 28 px: the label or note wraps inside its column rather than overflow.
+    RR.fit(it.querySelector(".counter-label"), 36, colW, 0.72, { wrap: true });
+    const note = it.querySelector(".counter-note");
+    if (note) RR.fit(note, 32, colW, 0.56, { wrap: true });
+  });
+  items.forEach((it, k) => {
+    const t = starts[k];
+    const value = it.querySelector(".counter-value");
+    const suffix = it.querySelector(".counter-suffix");
+    const note = it.querySelector(".counter-note");
+    // The value's box keeps its landed width, so the digits grow leftwards and nothing around them moves.
+    value.style.width = value.offsetWidth + "px";
+    if (k > 0) {
+      const rule = document.createElement("i");
+      rule.className = "counter-rule";
+      it.appendChild(rule);
+      tl.fromTo(rule, wide ? { scaleY: 0 } : { scaleX: 0 }, { [wide ? "scaleY" : "scaleX"]: 1, duration: 0.6, ease: "expo.out" }, t - 0.05);
+    }
+    tl.fromTo(it.querySelector(".counter-label"), { opacity: 0, filter: "blur(8px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.25, ease: "power2.out" }, t)
+      .fromTo(it.querySelector(".counter-figure"), { opacity: 0, y: 36, filter: "blur(10px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.55, ease: "expo.out" }, t);
+    const v = data[k].value;
+    RR.roll(tl, value, 0, v, t, 1.0, Number.isInteger(v) ? 0 : 1);
+    // As the number settles, its unit pops on (the plan's pop lands at +1.0) and the note blurs in.
+    if (suffix) tl.fromTo(suffix, { opacity: 0, scale: 0.4 }, { opacity: 1, scale: 1, duration: 0.4, ease: "back.out(2.2)" }, t + 0.92);
+    if (note) RR.blurIn(tl, note, t + 0.9, { duration: 0.18 });
+  });
+  S.done();
+})();
+</script>
+</template></body></html>

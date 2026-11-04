@@ -1,0 +1,46 @@
+<!doctype html>
+<html><head><meta charset="UTF-8" /></head><body><template>
+<style>
+  #root { position: absolute; inset: 0; overflow: hidden; background: var(--ground); display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: "Inter", sans-serif; }
+  #root[data-tone="dark"] { --ink: #f5f6f8; --muted: #a3aab5; }
+  #root[data-tone="light"] { --ink: #111418; --muted: #5b6470; }
+  .title-mark { display: flex; justify-content: center; }
+  .title-badge { width: 150px; height: 150px; border-radius: 38px; background: var(--accent); display: grid; place-items: center; overflow: hidden; flex: none; }
+  .title-badge img { width: 110px; height: 110px; object-fit: contain; }
+  .title-badge .glyph { display: block; width: 72px; height: 86px; background: var(--ground); border-radius: 9px; clip-path: polygon(0 0, 70% 0, 100% 22%, 100% 100%, 0 100%); }
+  .title-name { margin-top: 52px; font-weight: 900; font-size: 200px; letter-spacing: -0.05em; line-height: 1.05; color: var(--ink); white-space: nowrap; text-align: center; }
+  .title-name span { display: inline-block; }
+  .title-promise { margin-top: 46px; font-weight: 500; font-size: 52px; letter-spacing: -0.012em; line-height: 1.22; color: var(--muted); text-align: center; text-wrap: balance; }
+  .title-promise .w { display: inline-block; }
+  #root[data-layout="tall"] .title-name { margin-top: 64px; }
+  #root[data-layout="tall"] .title-promise { margin-top: 52px; }
+</style>
+<div id="root" data-composition-id="__ID__" data-width="__W__" data-height="__H__" data-layout="__LAYOUT__" data-style="__STYLE__">
+  <div class="title-mark"><div class="title-badge" data-zoom-target>__LOGO__</div></div>
+  <div class="title-name hero" data-field="name">__NAME__</div>
+  <div class="title-promise" data-field="scenes[__INDEX__].promise">__PROMISE__</div>
+  <script type="application/json" class="scene-data">__DATA__</script>
+</div>
+<script>
+__RUNTIME__
+(() => {
+  const S = RR.scene("__ID__");
+  const { tl, D, q, qa, W, wide } = S;
+  const [tBadge, tName, tPromise] = D.beats.landTimes;
+  const name = q(".title-name");
+  const promise = q(".title-promise");
+  // Sizes first (they read layout), then the tweens.
+  RR.fit(name, wide ? 200 : 150, W * 0.8, 0.6);
+  RR.fitLines(promise, wide ? 52 : 48, wide ? 1400 : 920, 3);
+  const letters = Array.from(name.textContent);
+  name.textContent = "";
+  letters.forEach((c) => { const s = document.createElement("span"); s.textContent = c === " " ? " " : c; name.appendChild(s); });
+  const words = RR.words(promise);
+  // The mark springs in, the name sharpens letter by letter, the promise blurs in word by word: then dead still.
+  tl.fromTo(q(".title-badge"), { scale: 0.2, rotation: -30, opacity: 0 }, { scale: 1, rotation: 0, opacity: 1, duration: 0.5, ease: "back.out(1.7)" }, tBadge)
+    .fromTo(qa(".title-name span"), { opacity: 0, filter: "blur(14px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.28, stagger: 0.035, ease: "power2.out" }, tName);
+  RR.blurIn(tl, words, tPromise, { stagger: 0.07, duration: 0.16 });
+  S.done();
+})();
+</script>
+</template></body></html>

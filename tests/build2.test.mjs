@@ -102,7 +102,8 @@ test("a placeholder typed in the story is never replaced", () => {
 });
 
 test("scene files follow the contract: template, root id, layout and style classes, runtime", () => {
-  const story = { ...onlyHookAndEnd(), style: "paper" };
+  // validStory2 has one scene of every type with a template so far (hook, title, list, counter, end).
+  const story = { ...validStory2(), style: "paper" };
   const plan = planFilm(story);
   const dir = buildProject(story, "wide", { baseDir: tmpDir(), outDir: tmpDir(), plan });
   for (const s of plan.scenes) {
@@ -195,4 +196,66 @@ test("unknown layout and scene types without a template are errors", () => {
   const plan = planFilm(odd);
   plan.scenes[1].type = "bogus";
   assert.throws(() => buildProject(odd, "wide", { baseDir: tmpDir(), outDir: tmpDir(), plan }), /no template for scene type "bogus"/);
+});
+
+// ---------- title, list and counter (Task 5) ----------
+
+function sceneFile(story, layout, id, type, opts = {}) {
+  const dir = buildProject(story, layout, { baseDir: opts.baseDir ?? tmpDir(), outDir: tmpDir(), plan: planFilm(story) });
+  return readFileSync(join(dir, `compositions/${id}-${type}.html`), "utf8");
+}
+
+test("title: name, promise and badge are filled, escaped and mapped to their fields", () => {
+  const story = validStory2();
+  story.name = "it's & <co>";
+  story.scenes[1].promise = "Reports that send $& themselves </script>";
+  for (const layout of ["wide", "tall"]) {
+    const html = sceneFile(story, layout, "s2", "title");
+    assert.ok(html.includes('<div class="title-name hero" data-field="name">it&#39;s &amp; &lt;co&gt;</div>'), "name");
+    assert.ok(html.includes('<div class="title-promise" data-field="scenes[1].promise">Reports that send $&amp; themselves &lt;/script&gt;</div>'), "promise");
+    assert.ok(html.includes('<div class="title-badge" data-zoom-target><i class="glyph"></i></div>'), "glyph badge without a logo");
+    assert.ok(!/__[A-Z][A-Z0-9_]*__/.test(html), "no placeholders left");
+    assert.equal(sceneData(html).data.promise, "Reports that send $& themselves </script>");
+  }
+  const base = tmpDir();
+  writeFileSync(join(base, "logo.png"), "png");
+  const html = sceneFile({ ...story, logo: "logo.png" }, "wide", "s2", "title", { baseDir: base });
+  assert.ok(html.includes('<div class="title-badge" data-zoom-target><img src="assets/logo.png" alt=""></div>'));
+});
+
+test("list: three items, each with its index and its own field", () => {
+  const story = validStory2();
+  story.scenes[2].items = ["Branded <PDF>", "Never sends $$ twice", "it's free"];
+  for (const layout of ["wide", "tall"]) {
+    const html = sceneFile(story, layout, "s3", "list");
+    const items = html.match(/<div class="list-item[^"]*" data-field="scenes\[2\]\.items\[\d\]">[^<]*<\/div>/g) ?? [];
+    assert.equal(items.length, 3, "three items");
+    assert.ok(html.includes('data-field="scenes[2].items[0]">Branded &lt;PDF&gt;</div>'));
+    assert.ok(html.includes('data-field="scenes[2].items[1]">Never sends $$ twice</div>'));
+    assert.ok(html.includes('<div class="list-item hero" data-field="scenes[2].items[2]">it&#39;s free</div>'), "the last item is the hero");
+    assert.ok(html.includes('class="list-index"'), "index");
+    assert.ok(!/__[A-Z][A-Z0-9_]*__/.test(html), "no placeholders left");
+  }
+});
+
+test("counter: each item's value, suffix, label and note are filled and mapped; missing parts are left out", () => {
+  const story = validStory2();
+  story.scenes[3].items = [
+    { value: 4812, label: "Sessions", suffix: "+", note: "up <10%>" },
+    { value: 12.5, label: "Hours saved", suffix: "h" },
+    { value: 7, label: "Clients & co" },
+  ];
+  for (const layout of ["wide", "tall"]) {
+    const html = sceneFile(story, layout, "s4", "counter");
+    assert.equal((html.match(/<div class="counter-item/g) ?? []).length, 3, "three items");
+    assert.ok(html.includes('<span class="counter-value" data-field="scenes[3].items[0].value">4,812</span>'), "value, formatted");
+    assert.ok(html.includes('<span class="counter-suffix" data-field="scenes[3].items[0].suffix">+</span>'), "suffix");
+    assert.ok(html.includes('<div class="counter-label" data-field="scenes[3].items[0].label">Sessions</div>'), "label");
+    assert.ok(html.includes('<div class="counter-note" data-field="scenes[3].items[0].note">up &lt;10%&gt;</div>'), "note");
+    assert.ok(html.includes('data-field="scenes[3].items[1].value">12.5</span>'), "one decimal kept");
+    assert.ok(html.includes('data-field="scenes[3].items[2].label">Clients &amp; co</div>'));
+    assert.ok(!html.includes("items[1].note") && !html.includes("items[2].suffix") && !html.includes("items[2].note"), "absent fields are not drawn");
+    assert.ok(html.includes('data-zoom-target'), "the first value is the zoom target");
+    assert.ok(!/__[A-Z][A-Z0-9_]*__/.test(html), "no placeholders left");
+  }
 });
