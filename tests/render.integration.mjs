@@ -13,6 +13,9 @@ import { tmpDir, validStory } from "./helpers.mjs";
 
 const RENDER = resolve(dirname(fileURLToPath(import.meta.url)), "../skills/readmereel/scripts/render.mjs");
 
+// build.mjs now writes v2 projects (Task 4). These cases build v1 films; Task 9 replaces this file with tests/render2.integration.mjs.
+const V1_ONLY = "v1 film: build.mjs builds v2 projects now; replaced by render2.integration.mjs in Task 9";
+
 // A scratch folder that is removed when the test ends. CI keeps them so a failed run's logs can be uploaded.
 function scratch(t) {
   const dir = tmpDir();
@@ -35,7 +38,7 @@ function probe(file) {
   return { ...data.streams[0], duration: Number(data.format.duration) };
 }
 
-test("renders both videos and the GIF from a story", (t) => {
+test("renders both videos and the GIF from a story", { skip: V1_ONLY }, (t) => {
   const repo = scratch(t);
   makePng(join(repo, "docs/shot.png"));
   const story = validStory();
@@ -55,7 +58,7 @@ test("renders both videos and the GIF from a story", (t) => {
   assert.ok(gif > 0 && gif <= GIF.maxBytes, `gif size ${gif}`);
 });
 
-test("the longest allowed text fits both layouts, beside a real screenshot", (t) => {
+test("the longest allowed text fits both layouts, beside a real screenshot", { skip: V1_ONLY }, (t) => {
   const story = validStory();
   story.name = "N".repeat(LIMITS.name);
   story.promise = "Promise ".repeat(8).slice(0, LIMITS.promise);
@@ -77,7 +80,7 @@ test("the longest allowed text fits both layouts, beside a real screenshot", (t)
   }
 });
 
-test("the layout check can fail: an overflowing element is reported", (t) => {
+test("the layout check can fail: an overflowing element is reported", { skip: V1_ONLY }, (t) => {
   const out = scratch(t);
   const log = join(out, "check.log");
   ensureBrowser({ log });

@@ -1,0 +1,58 @@
+<!doctype html>
+<html><head><meta charset="UTF-8" /></head><body><template>
+<style>
+  #root { position: absolute; inset: 0; overflow: hidden; background: var(--ground); display: flex; align-items: center; justify-content: center; font-family: "Inter", sans-serif; }
+  #root[data-tone="dark"] { --ink: #f5f6f8; }
+  #root[data-tone="light"] { --ink: #111418; }
+  .hook-line { position: absolute; left: 0; right: 0; text-align: center; font-weight: 900; color: var(--ink); letter-spacing: -0.045em; line-height: 1; white-space: nowrap; padding: 0 6%; }
+  .hook-line .w { display: inline-block; }
+  .hook-line .acc { color: var(--accent-ink); }
+  #root[data-style="signal"] .hook-line .acc { color: var(--ink); text-decoration: underline; text-decoration-thickness: 0.08em; text-underline-offset: 0.12em; }
+  .hook-num { display: inline-block; font-variant-numeric: tabular-nums; text-align: right; }
+</style>
+<div id="root" data-composition-id="__ID__" data-width="__W__" data-height="__H__" data-layout="__LAYOUT__" data-style="__STYLE__">
+  __LINES__
+  <script type="application/json" class="scene-data">__DATA__</script>
+</div>
+<script>
+__RUNTIME__
+(() => {
+  const S = RR.scene("__ID__");
+  const { tl, D, qa, W, H, wide } = S;
+  const lines = qa(".hook-line");
+  const starts = D.beats.lineStarts;
+  const travel = Math.round(H * 0.65); // the prototype's 700 px whip at 1080 high
+  lines.forEach((el, k) => {
+    RR.fit(el, wide ? 260 : 170, W * 0.88, 0.56);
+    const ws = RR.words(el, D.data.accentWords);
+    const t = starts[k];
+    if (k === 0) {
+      // On screen from the first frame: words sharpen one after another.
+      tl.fromTo(ws, { opacity: 0.25, filter: "blur(10px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.18, stagger: 0.07, ease: "power2.out" }, t);
+    } else {
+      // Whips up from below and lands sharp, just after the previous line has left.
+      tl.set(el, { opacity: 1 }, t).fromTo(el, { y: travel, filter: "blur(18px)" }, { y: 0, filter: "blur(0px)", duration: 0.32, ease: "expo.out" }, t);
+    }
+    if (D.data.count && D.data.count.line === k) {
+      const digits = String(D.data.count.to);
+      const word = ws.find((w) => w.textContent.includes(digits));
+      if (word) {
+        // Roll only the number, so "40%" or "(40)" keep their other characters.
+        const [before, after] = [word.textContent.slice(0, word.textContent.indexOf(digits)), word.textContent.slice(word.textContent.indexOf(digits) + digits.length)];
+        word.textContent = before;
+        const num = document.createElement("span");
+        num.className = "hook-num";
+        num.style.minWidth = digits.length + "ch";
+        word.appendChild(num);
+        word.appendChild(document.createTextNode(after));
+        RR.roll(tl, num, 1, D.data.count.to, t, 0.45);
+      }
+    }
+    if (k < lines.length - 1) tl.to(el, { y: -travel, filter: "blur(18px)", duration: 0.2, ease: "power3.in" }, starts[k + 1] - 0.12);
+  });
+  lines.slice(1).forEach((el) => tl.set(el, { opacity: 0 }, 0));
+  lines.at(-1).classList.add("hero");
+  S.done();
+})();
+</script>
+</template></body></html>

@@ -54,7 +54,7 @@ function decodeEntities(s) {
   });
 }
 
-const escAttr = (s) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+export const escAttr = (s) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const escText = (s) => s.replace(/</g, "&lt;");
 
 // ------------------------------------------------------------------ URLs
@@ -173,7 +173,7 @@ function cssUnescape(s) {
   });
 }
 
-const cssString = (v) => `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "").replace(/</g, "\\3c ")}"`;
+export const cssString = (v) => `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "").replace(/</g, "\\3c ")}"`;
 
 function assertNoAtRules(css) {
   for (let i = 0; i < css.length; i = step(css, i)) {

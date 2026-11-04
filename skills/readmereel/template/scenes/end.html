@@ -1,0 +1,63 @@
+<!doctype html>
+<html><head><meta charset="UTF-8" /></head><body><template>
+<style>
+  #root { position: absolute; inset: 0; overflow: hidden; background: var(--ground); display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: "Inter", sans-serif; }
+  #root[data-tone="dark"] { --ink: #f5f6f8; --muted: #a3aab5; --card: #15181d; --line: #262b33; --badge: var(--accent); --pill: var(--accent); --on-pill: var(--on-accent); }
+  #root[data-tone="light"] { --ink: #111418; --muted: #5b6470; --card: #ffffff; --line: #dfe3e1; --badge: var(--accent); --pill: var(--accent); --on-pill: var(--on-accent); }
+  /* signal: the ground is the accent itself, so the badge and the pill take the ink instead. */
+  #root[data-style="signal"] { --badge: var(--ink); --pill: var(--ink); --on-pill: var(--ground); }
+  #root[data-style="signal"][data-tone="dark"] { --muted: rgba(255, 255, 255, 0.86); --card: rgba(0, 0, 0, 0.32); --line: rgba(255, 255, 255, 0.2); }
+  #root[data-style="signal"][data-tone="light"] { --muted: rgba(0, 0, 0, 0.72); --card: rgba(255, 255, 255, 0.5); --line: rgba(0, 0, 0, 0.16); }
+  .end-mark { display: flex; align-items: center; gap: 34px; }
+  #root[data-layout="tall"] .end-mark { flex-direction: column; gap: 28px; }
+  .end-badge { width: 132px; height: 132px; border-radius: 34px; background: var(--badge); display: grid; place-items: center; overflow: hidden; flex: none; }
+  .end-badge img { width: 96px; height: 96px; object-fit: contain; }
+  .end-badge .glyph { display: block; width: 64px; height: 76px; background: var(--ground); border-radius: 8px; clip-path: polygon(0 0, 70% 0, 100% 22%, 100% 100%, 0 100%); }
+  .end-name { font-weight: 900; font-size: 168px; letter-spacing: -0.05em; line-height: 1.05; color: var(--ink); white-space: nowrap; }
+  .end-name span { display: inline-block; }
+  .end-cta { margin-top: 56px; font-family: "JetBrains Mono", monospace; font-size: 42px; color: var(--ink); background: var(--card); border: 2px solid var(--line); border-radius: 18px; padding: 26px 44px; white-space: nowrap; }
+  .end-cta .p { color: var(--accent-ink); margin-right: 22px; }
+  #root[data-style="signal"] .end-cta .p { color: var(--ink); }
+  .end-star { margin-top: 34px; display: inline-flex; align-items: center; gap: 14px; font-weight: 900; font-size: 44px; letter-spacing: -0.01em; background: var(--pill); color: var(--on-pill); padding: 18px 38px; border-radius: 999px; }
+  .end-star svg { width: 40px; height: 40px; fill: currentColor; flex: none; }
+  .end-url { font-size: 40px; color: var(--muted); margin-top: 30px; font-weight: 500; white-space: nowrap; }
+  .end-made { position: absolute; left: 0; right: 0; bottom: 76px; text-align: center; font-size: 28px; color: var(--muted); }
+  #root[data-layout="tall"] .end-made { bottom: 150px; }
+</style>
+<div id="root" data-composition-id="__ID__" data-width="__W__" data-height="__H__" data-layout="__LAYOUT__" data-style="__STYLE__">
+  <div class="end-mark hero"><div class="end-badge">__LOGO__</div><div class="end-name" data-field="name">__NAME__</div></div>
+  <div class="end-cta"><span class="p">$</span><span class="end-cmd" data-field="install">__INSTALL__</span></div>
+  <div class="end-star"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.8l3.1 6.6 7.2.9-5.3 5 1.4 7.1L12 17.9l-6.4 3.5L7 14.3l-5.3-5 7.2-.9z"/></svg>Star on GitHub</div>
+  <div class="end-url" data-field="url">__URL__</div>
+  <div class="end-made">made with readmereel</div>
+  <script type="application/json" class="scene-data">__DATA__</script>
+</div>
+<script>
+__RUNTIME__
+(() => {
+  const S = RR.scene("__ID__");
+  const { tl, D, q, qa, W, wide } = S;
+  const [tLogo, tName, tUrl, tType] = D.beats.landTimes;
+  const name = q(".end-name");
+  // Wide: the name shares the row with the badge (132 px + 34 px gap).
+  RR.fit(name, wide ? 168 : 132, wide ? W * 0.62 : W * 0.86, 0.58);
+  const letters = Array.from(name.textContent);
+  name.textContent = "";
+  letters.forEach((c) => { const s = document.createElement("span"); s.textContent = c === " " ? " " : c; name.appendChild(s); });
+  // The prompt, its gap and the padding take about 3 characters' room.
+  const cmd = q(".end-cmd");
+  RR.fit(cmd, wide ? 42 : 34, (wide ? W * 0.7 : W * 0.8) - 150, 0.6);
+  q(".end-cta").style.fontSize = cmd.style.fontSize;
+  cmd.style.fontSize = "";
+  RR.fit(q(".end-url"), wide ? 40 : 34, W * 0.86, 0.55, { wrap: true });
+  tl.fromTo(q(".end-badge"), { scale: 0.2, rotation: -30, opacity: 0 }, { scale: 1, rotation: 0, opacity: 1, duration: 0.5, ease: "back.out(1.7)" }, tLogo)
+    .fromTo(qa(".end-name span"), { opacity: 0.25, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2, stagger: 0.035, ease: "power2.out" }, tName)
+    .fromTo([q(".end-url"), q(".end-star")], { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.35, stagger: 0.08, ease: "expo.out" }, tUrl)
+    .fromTo(q(".end-cta"), { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.35, ease: "expo.out" }, tType - 0.1);
+  RR.type(tl, cmd, tType, 0.03);
+  if (D.data.endCard === false) q(".end-made").style.display = "none";
+  else tl.fromTo(q(".end-made"), { opacity: 0 }, { opacity: 1, duration: 0.4 }, tType + 0.4);
+  S.done();
+})();
+</script>
+</template></body></html>
