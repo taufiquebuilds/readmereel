@@ -448,3 +448,94 @@ test("round 2 D: links keep only same-document fragments", () => {
   }
   assert.equal(clean('<a href="#top">t</a><a href="#">h</a>').html, '<a href="#s-top">t</a><a href="#">h</a>');
 });
+
+// ---- round 3 ----
+
+// What the browser reads: every escape decoded (CSS Syntax 4.3.7), comments gone.
+const decodedCss = (s) => s.replace(/\/\*[^]*?\*\//g, "").replace(/\\(?:([0-9a-fA-F]{1,6})[ \t\n\f]?|([^\n]))/g, (m, hex, ch) => (hex ? String.fromCodePoint(Math.min(parseInt(hex, 16) || 0xfffd, 0x10ffff)) : ch));
+const LOADERS = /(?:image-set|cross-fade|element|paint|src|image)\s*\(/i;
+
+const IMAGE_SET_SPELLINGS = [
+  "image\\2d set", "image\\2D set", "image\\00002d set", "image\\2d\tset", "image\\-set", "-webkit-image\\2d set", "-webkit-image\\-set",
+  "IMAGE-SET", "Image-Set", "\\69mage-set", "\\49 MAGE\\2d SET", "\\-webkit-image-set", "-\\77 ebkit-image-set", "image-se\\74",
+  "-moz-image-set", "cross\\-fade", "cross\\2d fade", "-webkit-cross-fade", "\\65lement", "-moz-element", "paint", "src", "\\73rc", "image",
+];
+
+test("round 3 E: a function name is judged after every CSS escape is decoded (style blocks)", () => {
+  for (const name of IMAGE_SET_SPELLINGS) {
+    const out = clean(`<style>.a{color:red;background-image:${name}("http://127.0.0.1:9/x.png" 1x);width:1px}</style><div class="a">k</div>`);
+    assert.ok(!/http|127\.0/.test(out.css), `${name}: ${out.css}`);
+    assert.ok(!LOADERS.test(decodedCss(out.css)), `${name}: ${out.css}`);
+    assert.ok(out.css.includes("color:red") && out.css.includes("width:1px"), `${name}: only the bad declaration goes: ${out.css}`);
+    assert.ok(out.removed.some((r) => /function|external-load/.test(r)), `${name}: reported: ${out.removed}`);
+  }
+});
+
+test("round 3 E: the same spellings in style attributes are removed", () => {
+  for (const name of IMAGE_SET_SPELLINGS) {
+    const out = clean(`<div style='color:red;background-image:${name}("http://127.0.0.1:9/y.png" 1x)'>k</div>`);
+    assert.ok(!/http|127\.0/.test(out.html), `${name}: ${out.html}`);
+    assert.ok(!LOADERS.test(decodedCss(out.html.replace(/&quot;/g, '"'))), `${name}: ${out.html}`);
+    assert.ok(out.html.includes("color:red"), `${name}: ${out.html}`);
+  }
+});
+
+test("round 3 E: custom properties cannot carry a loader to var(), nested or not", () => {
+  for (const css of [
+    `.a{--u:image\\2d set("http://h/z.png" 1x);background:var(--u)}`,
+    `.a{--u:  -webkit-image\\2d set("http://h/z.png" 1x)}`,
+    `.a{--u:linear-gradient(red,blue),image\\-set("http://h/z.png" 1x)}`,
+    `.a{background:var(--nope,image\\2d set("http://h/z.png" 1x))}`,
+    `.a{background:linear-gradient(red,blue),calc(1px + image\\2d set("http://h/z.png" 1x))}`,
+    `.a{background:rgb(0 0 0 / var(--x, \\69mage-set("http://h/z.png" 1x)))}`,
+    `.a{--\\75:image\\2d set("http://h/z.png" 1x)}`,
+  ]) {
+    const out = clean(`<style>${css}</style><div style='${css.slice(3, -1)}' class="a">k</div>`);
+    assert.ok(!/http|h\/z/.test(out.css) && !/http|h\/z/.test(out.html), `${css}: ${out.css} ${out.html}`);
+  }
+});
+
+test("round 3 E: only allowlisted CSS functions survive, and an escaped ( is refused", () => {
+  for (const decl of [
+    "background:attr(x)", "width:env(safe-area-inset-top)", "left:anchor(--a left)", "background:-webkit-canvas(x)",
+    "background:foo(1px)", "width:calc\\(1px)", "width:calc\\28 1px)", "content:counter\\(x)", "background:url\\(x.png)",
+    "transform:-webkit-image-set(x)", "background:\\2d webkit-image-set(x)", "background:--x(1)",
+  ]) {
+    const out = clean(`<style>.a{color:red;${decl}}</style><div style="color:blue;${decl.replace(/"/g, "&quot;")}">k</div>`);
+    assert.match(out.css, /^\.s \.a\{color:red;?\}$/, decl);
+    assert.match(out.html, /^<div style="color:blue;?">k<\/div>$/, decl);
+  }
+  const ok = [
+    "color:rgb(1 2 3 / 50%)", "color:RGBA(1,2,3,.5)", "color:hsl(1 2% 3%)", "color:oklch(0.7 0.1 200)", "color:color-mix(in srgb,red 50%,blue)",
+    "color:color(display-p3 1 0 0)", "width:calc(100% - var(--w,10px))", "width:clamp(1px,2vw,3px)", "width:min(1px,max(2px,3px))",
+    "background:linear-gradient(135deg,#1e293b,#0f172a)", "background:-webkit-linear-gradient(top,red,blue)",
+    "background:repeating-radial-gradient(circle,red,blue 10%)", "background:conic-gradient(red,blue)",
+    "transform:translate(-50%,-50%) rotate(45deg) scaleX(2) skewY(1deg) matrix(1,0,0,1,0,0) translate3d(0,0,0)",
+    "transform:perspective(100px) rotateX(10deg)", "transition:all .2s cubic-bezier(.2,0,0,1)", "animation-timing-function:steps(4,end)",
+    "filter:blur(2px) brightness(1.1) contrast(1) drop-shadow(0 1px 2px rgb(0 0 0/.3)) grayscale(1) hue-rotate(9deg) invert(0) opacity(1) saturate(2) sepia(0)",
+    "grid-template-columns:repeat(auto-fill,minmax(200px,1fr))", "width:fit-content(20em)", 'content:counter(x) ". "',
+    'content:"\\2022"', 'content:"\\201C quoted \\201D"', "font-family:\\49nter,system-ui", "background:url(shots/a.png)",
+  ];
+  const out = clean(`<style>.a{${ok.join(";")}}</style>`);
+  for (const decl of ok) {
+    const prop = decl.slice(0, decl.indexOf(":"));
+    assert.ok(out.css.includes(`${prop}:`), `${decl} kept: ${out.css}`);
+  }
+  assert.ok(out.css.includes('content:"\\2022"') && out.css.includes('content:"\\201C quoted \\201D"'), out.css);
+  assert.ok(!out.removed.some((r) => /function/.test(r)), out.removed.join("; "));
+  const attr = clean(`<div style='${ok.slice(0, 6).join(";")}'>k</div>`);
+  for (const decl of ok.slice(0, 6)) assert.ok(attr.html.includes(decl.slice(0, decl.indexOf(":") + 1)), `${decl} kept in attr: ${attr.html}`);
+});
+
+test("round 3 E: escaped property names are judged decoded", () => {
+  for (const prop of ["-moz-\\62 inding", "-moz\\2d binding", "\\62 ehavior", "\\-moz-binding"]) {
+    const out = clean(`<style>.a{color:red;${prop}:url(x.xml)}</style>`);
+    assert.match(out.css, /^\.s \.a\{color:red;?\}$/, prop);
+  }
+});
+
+test("round 3 E: escaped selectors and functional pseudo-classes still pass the final scan", () => {
+  const css = String.raw`.md\:flex{display:flex} .w-\[calc\(100\%-2rem\)\]{width:calc(100% - 2rem)} li:nth-child(2n+1):not(.x):is(.a,.b):where(p)>a:has(>img){color:rgb(1 2 3)} p::before{content:"\2022"}`;
+  const out = clean(`<style>${css}</style><div class="md:flex">x</div>`);
+  assert.equal(out.css, String.raw`.s .md\:flex{display:flex} .s .w-\[calc\(100\%-2rem\)\]{width:calc(100% - 2rem)} .s li:nth-child(2n+1):not(.x):is(.a,.b):where(p)>a:has(>img){color:rgb(1 2 3)} .s p::before{content:"\2022"}`);
+});

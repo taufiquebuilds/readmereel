@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { closeSync, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { closeSync, constants, copyFileSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { planFilm } from "./plan.mjs";
-import { cssString, escAttr, sanitizeScreen } from "./sanitize.mjs";
+import { MAX_IMAGES, sanitizeScreen } from "./sanitize.mjs";
 import { toV2 } from "./story.mjs";
 
 // Film plan -> HyperFrames project: a root index.html that mounts one sub-composition per scene (overlapping by the
@@ -61,13 +61,14 @@ function copyInto(projectDir, src, rel) {
   return rel;
 }
 
-// A story file the build reads or copies: a plain file (not a symlink) whose real path is inside baseDir. Errors name
-// the story field. Returns the real path.
+// A story file the build reads or copies: a plain file (not a symlink, and with no other hard link, which could be a
+// file from anywhere on the disk) whose real path is inside baseDir. Errors name the story field. Returns the real path.
 function storyFile(baseDir, file, field, what, shown) {
   let stat;
   try { stat = lstatSync(file); } catch { throw new Error(`${field}: ${what} not found: ${shown}`); }
   if (stat.isSymbolicLink()) throw new Error(`${field}: ${what} is a symbolic link: ${shown}`);
   if (!stat.isFile()) throw new Error(`${field}: ${what} is not a file: ${shown}`);
+  if (stat.nlink > 1) throw new Error(`${field}: ${what} has other hard links (refused, it may be a file from outside the project): ${shown}`);
   const real = realpathSync(file);
   const rel = relative(realpathSync(baseDir), real);
   if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
@@ -93,7 +94,8 @@ function copyImage(projectDir, baseDir, src, rel, field, shown) {
   const real = storyFile(baseDir, src, field, "image", shown);
   const kind = IMAGE_KINDS[extname(src).toLowerCase()];
   if (!kind) throw new Error(`${field}: image is not a PNG, JPEG, GIF, WebP or SVG file: ${shown}`);
-  const fd = openSync(real, "r");
+  // Non-blocking, so a file swapped for a FIFO after the check cannot hang the build.
+  const fd = openSync(real, constants.O_RDONLY | constants.O_NONBLOCK);
   let head;
   try {
     const buf = Buffer.alloc(extname(src).toLowerCase() === ".svg" ? SVG_SNIFF : 16);
@@ -101,6 +103,26 @@ function copyImage(projectDir, baseDir, src, rel, field, shown) {
   } finally { closeSync(fd); }
   if (!kind[1](head)) throw new Error(`${field}: image is not ${kind[0]} file: ${shown}`);
   return copyInto(projectDir, real, rel);
+}
+
+// The sanitizer refuses more than this too; the screen file is checked against it before it is read.
+const SCREEN_MAX_BYTES = 256 * 1024;
+
+// The screen file's text: opened without blocking, checked to be a plain file of at most 256 KB, and read no further
+// than one byte past the cap (in case it grew after the check).
+function readScreen(real, field, shown) {
+  const over = () => new Error(`${field}: the screen file is over 256 KB: ${shown}`);
+  const fd = openSync(real, constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW);
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) throw new Error(`${field}: the screen file is not a file: ${shown}`);
+    if (stat.size > SCREEN_MAX_BYTES) throw over();
+    const buf = Buffer.alloc(SCREEN_MAX_BYTES + 1);
+    let n = 0;
+    for (let r; n < buf.length && (r = readSync(fd, buf, n, buf.length - n, n)) > 0;) n += r;
+    if (n > SCREEN_MAX_BYTES) throw over();
+    return buf.toString("utf8", 0, n);
+  } finally { closeSync(fd); }
 }
 
 // A rebuilt HTML screen for a `ui` scene: sanitized, its CSS scoped to .screen-<id>, its images copied into
@@ -112,15 +134,16 @@ function copyImage(projectDir, baseDir, src, rel, field, shown) {
 export function prepareScreen(scene, id, { baseDir, projectDir, field = "html" }) {
   const file = resolve(baseDir, scene.html);
   const real = storyFile(baseDir, file, field, "the screen file", scene.html);
-  const { html: cleanHtml, css: cleanCss, images } = sanitizeScreen(readFileSync(real, "utf8"), `screen-${id}`);
-  let html = cleanHtml;
-  let css = cleanCss;
-  images.forEach((path, k) => {
-    const src = resolve(dirname(file), path);
-    const rel = copyImage(projectDir, baseDir, src, `assets/screens/${id}-${k + 1}${extname(path).toLowerCase()}`, field, path);
-    html = html.replaceAll(`="${escAttr(path)}"`, `="${rel}"`).replaceAll(escAttr(`url(${cssString(path)})`), escAttr(`url("${rel}")`));
-    css = css.replaceAll(`url(${cssString(path)})`, `url("${rel}")`);
-  });
+  // The sanitizer writes each local image as its copy's name, in one pass; the copies are made (and checked) after.
+  const copies = [];
+  const mapImage = (path, k) => {
+    if (k >= MAX_IMAGES) throw new Error(`${field}: the screen uses more than ${MAX_IMAGES} images`);
+    const rel = `assets/screens/${id}-${k + 1}${extname(path).toLowerCase()}`;
+    copies.push([path, rel]);
+    return rel;
+  };
+  const { html, css } = sanitizeScreen(readScreen(real, field, scene.html), `screen-${id}`, { mapImage });
+  for (const [path, rel] of copies) copyImage(projectDir, baseDir, resolve(dirname(file), path), rel, field, path);
   const frame = "position:relative!important;overflow:clip!important;contain:paint!important;transform:none!important;zoom:1!important;z-index:auto!important";
   const markup = `<div class="screen-frame-${id}" style="${frame}"><div class="screen-${id}">${html}</div></div>`;
   const style = css ? `<style>${css}</style>` : "";

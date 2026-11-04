@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { closeSync, ftruncateSync, linkSync, mkdirSync, openSync, symlinkSync, writeFileSync, writeSync } from "node:fs";
 import { join } from "node:path";
 import { LIMITS, imageSize, toV2, validateStory } from "../skills/readmereel/scripts/lib/story.mjs";
 import { tmpDir, validStory, validStory2 } from "./helpers.mjs";
@@ -140,4 +141,53 @@ test("v1 errors are reported with v1 paths before conversion", () => {
   const s = validStory();
   s.features.pop();
   assert.deepEqual(validateStory(s, tmpDir()), ["features: must be a list of exactly 3"]);
+});
+
+// ---- round 3 G: imageSize only reads the header of a plain image file inside the story folder ----
+
+const STORY_URL = new URL("../skills/readmereel/scripts/lib/story.mjs", import.meta.url).href;
+// In a child with a time limit, so a blocking read (a FIFO) fails the test instead of hanging it.
+function sizeInChild(path, base) {
+  const code = `import { imageSize } from ${JSON.stringify(STORY_URL)}; console.log(JSON.stringify(imageSize(${JSON.stringify(path)}, ${JSON.stringify(base)})));`;
+  const r = spawnSync(process.execPath, ["--input-type=module", "-e", code], { encoding: "utf8", timeout: 10000 });
+  return r.error ? `child failed: ${r.error.code}` : JSON.parse(r.stdout);
+}
+
+test("round 3 G: imageSize refuses FIFOs, outside symlinks, hard links and huge files, and falls back", () => {
+  const dir = tmpDir();
+  const outside = tmpDir();
+  writeFileSync(join(outside, "secret.png"), pngHeader(1280, 720));
+  writeFileSync(join(dir, "real.png"), pngHeader(1280, 720));
+  assert.equal(spawnSync("mkfifo", [join(dir, "pipe.png")]).status, 0);
+  assert.deepEqual(sizeInChild(join(dir, "pipe.png"), dir), [1600, 1000], "a FIFO is not read");
+  symlinkSync(join(outside, "secret.png"), join(dir, "out.png"));
+  assert.deepEqual(imageSize(join(dir, "out.png"), dir), [1600, 1000], "symlink to a file outside the story folder");
+  symlinkSync(join(dir, "real.png"), join(dir, "in.png"));
+  assert.deepEqual(imageSize(join(dir, "in.png"), dir), [1280, 720], "symlink that stays inside the story folder");
+  symlinkSync("/dev/zero", join(dir, "zero.png"));
+  assert.deepEqual(sizeInChild(join(dir, "zero.png"), dir), [1600, 1000], "a device is not read");
+  assert.deepEqual(imageSize(join(outside, "secret.png"), dir), [1600, 1000], "a path outside the story folder");
+  linkSync(join(outside, "secret.png"), join(dir, "hard.png"));
+  assert.deepEqual(imageSize(join(dir, "hard.png"), dir), [1600, 1000], "a hard link");
+  mkdirSync(join(dir, "folder.png"));
+  assert.deepEqual(imageSize(join(dir, "folder.png"), dir), [1600, 1000], "a directory");
+  // over 25 MB: refused from its size alone (sparse, so the test does not write 25 MB)
+  const fd = openSync(join(dir, "huge.png"), "w");
+  writeSync(fd, pngHeader(1280, 720));
+  ftruncateSync(fd, 25 * 1024 * 1024 + 1);
+  closeSync(fd);
+  assert.deepEqual(imageSize(join(dir, "huge.png"), dir), [1600, 1000], "over 25 MB");
+});
+
+test("round 3 G: a JPEG whose size marker sits after large segments is still read from its header", () => {
+  const dir = tmpDir();
+  const app = Buffer.alloc(4 + 60000);
+  app[0] = 0xff; app[1] = 0xe1; app.writeUInt16BE(60000 + 2, 2);
+  const parts = [Buffer.from([0xff, 0xd8]), app, app, app, Buffer.from([0xff, 0xc2, 0, 17, 8, 0x02, 0x58, 0x04, 0x00, 3, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1])];
+  writeFileSync(join(dir, "big.jpg"), Buffer.concat(parts));
+  assert.deepEqual(imageSize(join(dir, "big.jpg"), dir), [1024, 600]);
+  // v1 conversion passes the story folder, so a v1 image outside it gets the default box
+  const s = validStory();
+  s.features[0].image = "../x.png";
+  assert.deepEqual(toV2(s, dir).scenes[2].focus[0].box, [0, 0, 1600, 1000]);
 });

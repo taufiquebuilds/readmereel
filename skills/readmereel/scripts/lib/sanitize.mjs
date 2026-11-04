@@ -11,9 +11,11 @@
 // so a screen can neither close its wrapper nor swallow what follows it. Ids are
 // prefixed with the scope and template class names are removed.
 // CSS: comments stripped, escapes normalised, no at-rules and no nested rules,
-// every url() re-written to a checked canonical form, every selector scoped and
-// checked to stay inside the screen, position:fixed/sticky made absolute, and a
-// final scan that fails closed (strings terminated, brackets balanced).
+// every url() re-written to a checked canonical form, every function name in a
+// value checked against an allowlist after full escape decoding, every selector
+// scoped and checked to stay inside the screen, position:fixed/sticky made
+// absolute, and a final scan that fails closed (strings terminated, brackets
+// balanced, no function outside the allowlists).
 //
 // Size and cost: input over 256 KB is refused, open elements are capped at a depth of 256, and every scan is
 // either linear or bounded by that depth, so no input can make the sanitizer slow.
@@ -27,6 +29,11 @@ const REJECTED_AT_RULE = (name) => new Error(`screen: @${name} is not allowed`);
 const MAX_BYTES = 256 * 1024;
 // Open elements deeper than this are dropped (their text is kept), so every walk over the open-element stack is short.
 const MAX_DEPTH = 256;
+// Distinct local images one screen may use; one more refuses the screen.
+export const MAX_IMAGES = 64;
+
+// An error that refuses the whole screen, even where a bad style attribute would only be dropped.
+const fatal = (message) => Object.assign(new Error(message), { fatal: true });
 
 // ---------------------------------------------------------------- allowlists
 
@@ -87,6 +94,32 @@ const ID = /^[A-Za-z0-9_-]+$/;
 const RESERVED_CLASS = new Set(["root", "scene-data", "clip", "hero", "cam"]);
 const RESERVED_CLASS_PREFIX = /^(?:hook|title|ui|terminal|counter|compare|list|end|zoom|screen)-/;
 const IMAGE_FILE = /\.(?:png|jpe?g|gif|webp|svg)$/i;
+
+// The CSS functions a value may call, by name after full escape decoding, in lower case and without a vendor prefix
+// (-webkit-linear-gradient is linear-gradient). None of them loads anything. url() is not here: it is allowed only as
+// the exact name "url", and rewriteUrls turns every url() into a checked local image, data image or #fragment.
+// Anything else (image-set, cross-fade, element, paint, src, image, attr, env, anchor ...) drops the declaration.
+const VALUE_FUNCTIONS = new Set([
+  "rgb", "rgba", "hsl", "hsla", "hwb", "lab", "lch", "oklab", "oklch", "color", "color-mix", "light-dark",
+  "calc", "min", "max", "clamp", "round", "mod", "rem", "abs", "sign", "var",
+  "linear-gradient", "radial-gradient", "conic-gradient", "repeating-linear-gradient", "repeating-radial-gradient",
+  "repeating-conic-gradient",
+  "translate", "translatex", "translatey", "translatez", "translate3d", "rotate", "rotatex", "rotatey", "rotatez",
+  "rotate3d", "scale", "scalex", "scaley", "scalez", "scale3d", "skew", "skewx", "skewy", "matrix", "matrix3d", "perspective",
+  "cubic-bezier", "steps", "linear",
+  "blur", "brightness", "contrast", "drop-shadow", "grayscale", "hue-rotate", "invert", "opacity", "saturate", "sepia",
+  "minmax", "repeat", "fit-content",
+  "counter", "counters", "inset", "circle", "ellipse", "polygon", "rect", "xywh",
+]);
+// Functional pseudo-classes and pseudo-elements, allowed in the final scan only right after ":".
+const PSEUDO_FUNCTIONS = new Set([
+  "not", "is", "where", "has", "nth-child", "nth-last-child", "nth-of-type", "nth-last-of-type", "lang", "dir",
+  "-webkit-any", "-moz-any", "matches", "part", "highlight",
+]);
+const allowedFunction = (name) => {
+  const lower = name.toLowerCase();
+  return lower === "url" || VALUE_FUNCTIONS.has(lower.replace(/^-[a-z]+-/, ""));
+};
 
 const NAMED_ENTITIES = {
   amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", colon: ":", tab: "\t", newline: "\n", nbsp: "\u00a0",
@@ -226,6 +259,61 @@ function cssUnescape(s) {
   });
 }
 
+// The character an escape at s[i] ("\") stands for (CSS Syntax 4.3.7: one to six hex digits and one optional
+// whitespace, or any other character) and the index after it; null where "\" escapes nothing (before a newline or
+// at the end), which the browser reads as a lone "\".
+function decodeEscape(s, i) {
+  if (i + 1 >= s.length || /[\n\f\r]/.test(s[i + 1])) return null;
+  const hex = /^[0-9a-fA-F]{1,6}/.exec(s.slice(i + 1, i + 7));
+  if (!hex) return { ch: s[i + 1], end: i + 2 };
+  const cp = parseInt(hex[0], 16);
+  return { ch: cp === 0 || cp > 0x10ffff || (cp >= 0xd800 && cp <= 0xdfff) ? "\ufffd" : String.fromCodePoint(cp), end: escapeEnd(s, i) };
+}
+
+const NAME_CHAR = /[A-Za-z0-9_\-\u0080-\uffff]/;
+
+// Every function token in CSS text, the way the browser tokenises it: strings are skipped, and an escape is always
+// part of a name whatever it decodes to, so "image\2d set(" and "image\-set(" call image-set and "calc\(" calls
+// nothing. Names are returned fully decoded, with the character just before them. The contents of an unquoted url()
+// are one token and are skipped. `escapedParen` is set when an escape stands for "(" or ")".
+function cssFunctions(s) {
+  const found = [];
+  let escapedParen = false;
+  let name = "";
+  let start = 0;
+  for (let i = 0; i < s.length;) {
+    const c = s[i];
+    if (c === '"' || c === "'") { name = ""; i = skipString(s, i); continue; }
+    if (c === "\\") {
+      const e = decodeEscape(s, i);
+      if (!e) { name = ""; i++; continue; }
+      if (e.ch === "(" || e.ch === ")") escapedParen = true;
+      if (!name) start = i;
+      name += e.ch;
+      i = e.end;
+      continue;
+    }
+    if (NAME_CHAR.test(c)) { if (!name) start = i; name += c; i++; continue; }
+    if (c === "(" && name) {
+      found.push({ name, before: s[start - 1] ?? "" });
+      i++;
+      if (name.toLowerCase() === "url") {
+        let j = i;
+        while (j < s.length && /\s/.test(s[j])) j++;
+        if (s[j] !== '"' && s[j] !== "'") {
+          while (j < s.length && s[j] !== ")") j += s[j] === "\\" ? 2 : 1;
+          i = j;
+        }
+      }
+      name = "";
+      continue;
+    }
+    name = "";
+    i++;
+  }
+  return { found, escapedParen };
+}
+
 export const cssString = (v) => `"${v.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "").replace(/</g, "\\3c ")}"`;
 
 // A lone "\\" at the very end would escape whatever is written after the CSS (our own closing brace).
@@ -254,8 +342,7 @@ function rewriteUrls(text, ctx) {
         if (cls.ok && cls.kind === "fragment" && ID.test(cls.value.slice(1))) {
           out += `url(#${ctx.scope}-${cls.value.slice(1)})`;
         } else if (cls.ok && (cls.kind === "data" || (cls.kind === "local" && isImageFile(cls.value)))) {
-          if (cls.kind === "local") ctx.images.push(cls.value);
-          out += `url(${cssString(cls.value)})`;
+          out += `url(${cssString(cls.kind === "local" ? ctx.image(cls.value) : cls.value)})`;
         } else {
           ctx.removed.push(`${cls.ok ? (cls.kind === "local" ? "non-image file" : "odd fragment") : cls.why ?? "unsafe"} url() in ${ctx.where}`);
           out += "none";
@@ -301,10 +388,17 @@ function sanitizeDeclaration(text, ctx) {
   if (text.trim() === "") return text;
   const colon = text.indexOf(":");
   if (colon < 0) { ctx.removed.push(`stray text in ${ctx.where}`); return ""; }
-  const prop = text.slice(0, colon).trim().toLowerCase();
+  // Names and values are judged fully decoded: "-moz\2d binding" is -moz-binding, "image\2d set(" is image-set(.
+  const prop = cssUnescape(text.slice(0, colon).trim()).toLowerCase();
   const value = text.slice(colon + 1);
   if (BANNED_PROPS.has(prop)) { ctx.removed.push(`${prop} property in ${ctx.where}`); return ""; }
-  if (BANNED_VALUE.test(value.toLowerCase().replace(/\s+/g, ""))) { ctx.removed.push(`script or external-load value for ${prop} in ${ctx.where}`); return ""; }
+  const banned = (v) => BANNED_VALUE.test(v.toLowerCase().replace(/\s+/g, ""));
+  if (banned(value) || banned(cssUnescape(value))) { ctx.removed.push(`script or external-load value for ${prop} in ${ctx.where}`); return ""; }
+  // Custom properties too: whatever var() can carry was checked where it was declared.
+  const { found, escapedParen } = cssFunctions(value);
+  if (escapedParen) { ctx.removed.push(`escaped bracket in the value of ${prop} in ${ctx.where}`); return ""; }
+  const bad = found.find((f) => !allowedFunction(f.name));
+  if (bad) { ctx.removed.push(`function ${bad.name.toLowerCase()}() in the value of ${prop} in ${ctx.where}`); return ""; }
   const flat = value.toLowerCase().replace(/\s+/g, " ").trim();
   const important = /!\s*important$/.test(flat);
   // Nothing in the screen may be positioned against the page: fixed and sticky (and anything computed) become absolute,
@@ -504,6 +598,13 @@ function assertSafeCss(css) {
     }
   }
   if (open.length) throw unsafe();
+  // Every function, decoded: allowlisted value functions anywhere, functional pseudo-classes only right after ":".
+  // (An escaped bracket is only refused in values, where sanitizeDeclaration drops it: selectors such as Tailwind's
+  // ".w-\[calc\(100\%\)\]" need them, and there they are plain name characters.)
+  const { found } = cssFunctions(css);
+  for (const f of found) {
+    if (!allowedFunction(f.name) && !(f.before === ":" && PSEUDO_FUNCTIONS.has(f.name.toLowerCase()))) throw unsafe();
+  }
   const low = live.toLowerCase();
   if (low.includes("@") || /expression\s*\(|javascript:|vbscript:|livescript:|-moz-binding|behavior\s*:|image-set\s*\(|(?:^|[^a-z0-9])src\s*\(|progid|url\s*\((?!\s*""\s*\)|#[a-z0-9_-]+\))/.test(low)) {
     throw unsafe();
@@ -615,7 +716,10 @@ function cleanAttributes(tag, ns, attrs, ctx) {
       continue;
     }
     if (lname === "style") {
-      try { out.push(["style", cleanStyle(tag, value, ctx)]); } catch { drop("unsafe style attribute"); }
+      try { out.push(["style", cleanStyle(tag, value, ctx)]); } catch (e) {
+        if (e.fatal || !/^screen: /.test(e.message)) throw e;
+        drop("unsafe style attribute");
+      }
       continue;
     }
     if (ARIA_IDREFS.has(lname)) {
@@ -647,9 +751,8 @@ function cleanAttributes(tag, ns, attrs, ctx) {
     if (lname === "src" && tag === "img") {
       const c = classifyUrl(value);
       if (c.ok && (c.kind === "data" || (c.kind === "local" && isImageFile(c.value)))) {
-        out.push(["src", c.value]);
+        out.push(["src", c.kind === "local" ? ctx.image(c.value) : c.value]);
         hasImageSource = true;
-        if (c.kind === "local") ctx.images.push(c.value);
       } else drop(`${c.ok ? "not an image file" : c.why} in src`);
       continue;
     }
@@ -670,15 +773,29 @@ function cleanAttributes(tag, ns, attrs, ctx) {
   return { attrs: out, hasImageSource };
 }
 
-export function sanitizeScreen(html, scopeClass) {
+// `mapImage(path, k)` (optional) names what the k-th distinct local image (from 0) is written as in the output, so a
+// caller that copies the images can point at the copies without searching the output again. It may throw to refuse.
+export function sanitizeScreen(html, scopeClass, { mapImage } = {}) {
   if (typeof html !== "string") throw new TypeError("screen: html must be a string");
   if (typeof scopeClass !== "string" || !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(scopeClass)) throw new Error("screen: invalid scope class");
   if (html.length > MAX_BYTES || Buffer.byteLength(html, "utf8") > MAX_BYTES) throw new Error("screen: the screen HTML is over 256 KB");
 
   const removed = [];
-  const images = [];
+  const images = new Map(); // local path as written -> as emitted
+  const image = (path) => {
+    if (!images.has(path)) {
+      const k = images.size;
+      let emitted = path;
+      if (mapImage) {
+        try { emitted = String(mapImage(path, k)); } catch (e) { throw Object.assign(e, { fatal: true }); }
+      }
+      if (k >= MAX_IMAGES) throw fatal(`screen: the screen uses more than ${MAX_IMAGES} images`);
+      images.set(path, emitted);
+    }
+    return images.get(path);
+  };
   const styles = [];
-  const ctx = { removed, images, where: "style", scope: scopeClass };
+  const ctx = { removed, image, where: "style", scope: scopeClass };
   const src = html.replace(/\0/g, "").replace(/\r\n?/g, "\n");
   const n = src.length;
 
@@ -843,5 +960,5 @@ export function sanitizeScreen(html, scopeClass) {
     assertSafeCss(css);
   }
 
-  return { html: out.join("").trim(), css, images: [...new Set(images)], removed };
+  return { html: out.join("").trim(), css, images: [...images.keys()], removed };
 }

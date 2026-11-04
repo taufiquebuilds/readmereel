@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { closeSync, constants, existsSync, fstatSync, openSync, readSync, realpathSync } from "node:fs";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 
 export const V1_LIMITS = { name: 24, promise: 60, problem: 70, featureTitle: 40, featureDetail: 80, install: 48, url: 60 };
 const V2_LIMITS = {
@@ -124,27 +124,45 @@ function splitHook(problem) {
 }
 
 const DEFAULT_SIZE = [1600, 1000];
+// Larger files are not looked at (the default box is used).
+const IMAGE_SIZE_MAX_BYTES = 25 * 1024 * 1024;
+const SOF = (m) => m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc;
 
-export function imageSize(path) {
+// Width and height from a PNG, JPEG or SVG header, or the default box. Only a plain file is read (no FIFO, device or
+// directory, no file with other hard links, nothing over 25 MB), only when its real path is inside baseDir (when one is
+// given, so a symlink cannot point out of the story folder), and only the header bytes it needs.
+export function imageSize(path, baseDir) {
+  let fd;
   try {
-    const buf = readFileSync(path);
-    if (buf.length > 24 && buf.readUInt32BE(0) === 0x89504e47 && buf.toString("latin1", 12, 16) === "IHDR") {
-      return [buf.readUInt32BE(16), buf.readUInt32BE(20)];
+    const real = realpathSync(path);
+    if (baseDir !== undefined) {
+      const rel = relative(realpathSync(baseDir), real);
+      if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return DEFAULT_SIZE;
     }
-    if (buf.length > 4 && buf[0] === 0xff && buf[1] === 0xd8) {
+    fd = openSync(real, constants.O_RDONLY | constants.O_NONBLOCK);
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.nlink > 1 || stat.size > IMAGE_SIZE_MAX_BYTES) return DEFAULT_SIZE;
+    const read = (pos, len) => {
+      const b = Buffer.alloc(len);
+      return b.subarray(0, readSync(fd, b, 0, len, pos));
+    };
+    const head = read(0, 4096);
+    if (head.length > 24 && head.readUInt32BE(0) === 0x89504e47 && head.toString("latin1", 12, 16) === "IHDR") {
+      return [head.readUInt32BE(16), head.readUInt32BE(20)];
+    }
+    if (head.length > 4 && head[0] === 0xff && head[1] === 0xd8) {
+      // Walk the segments, reading 9 bytes per marker, until a start-of-frame marker.
       let i = 2;
-      while (i + 9 < buf.length) {
-        if (buf[i] !== 0xff) { i += 1; continue; }
-        const marker = buf[i + 1];
-        if (marker === 0xff) { i += 1; continue; }
-        if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
-          return [buf.readUInt16BE(i + 7), buf.readUInt16BE(i + 5)];
-        }
-        i += 2 + buf.readUInt16BE(i + 2);
+      for (let steps = 0; steps < 100000 && i + 9 <= stat.size; steps++) {
+        const m = read(i, 9);
+        if (m.length < 9) break;
+        if (m[0] !== 0xff) { const k = m.indexOf(0xff, 1); i += k < 0 ? 9 : k; continue; }
+        if (m[1] === 0xff) { i += 1; continue; }
+        if (SOF(m[1])) return [m.readUInt16BE(7), m.readUInt16BE(5)];
+        i += 2 + m.readUInt16BE(2);
       }
     }
-    const head = buf.toString("utf8", 0, Math.min(buf.length, 4096));
-    const svg = head.match(/<svg\b[^>]*>/i)?.[0];
+    const svg = head.toString("utf8").match(/<svg\b[^>]*>/i)?.[0];
     if (svg) {
       const attr = (name) => svg.match(new RegExp(`\\s${name}\\s*=\\s*["']\\s*([\\d.]+)\\s*(?:px)?\\s*["']`, "i"))?.[1];
       const w = Number(attr("width"));
@@ -155,6 +173,8 @@ export function imageSize(path) {
     }
   } catch {
     // unreadable or unknown format: fall through to the default
+  } finally {
+    if (fd !== undefined) closeSync(fd);
   }
   return DEFAULT_SIZE;
 }
@@ -165,7 +185,7 @@ export function toV2(story, baseDir = process.cwd()) {
   const uiFeatures = features.filter((f) => f.image).slice(0, 2);
   const rest = features.filter((f) => !uiFeatures.includes(f));
   const ui = uiFeatures.map((f) => {
-    const [w, h] = imageSize(resolve(baseDir, f.image));
+    const [w, h] = imageSize(resolve(baseDir, f.image), baseDir);
     return {
       type: "ui",
       image: f.image,

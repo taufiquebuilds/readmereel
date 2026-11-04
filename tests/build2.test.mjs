@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { closeSync, existsSync, ftruncateSync, linkSync, mkdirSync, openSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildProject, LAYOUTS, prepareScreen } from "../skills/readmereel/scripts/lib/build.mjs";
 import { planFilm } from "../skills/readmereel/scripts/lib/plan.mjs";
@@ -338,4 +339,87 @@ test("logo: a symlink, a path outside the project or a fake image is refused as 
   const nested = join(outside, "proj");
   mkdirSync(nested);
   assert.throws(() => buildProject(up, "wide", { baseDir: nested, outDir: tmpDir(), plan: planFilm(up) }), /logo: image is outside the project folder/);
+});
+
+// ---------- security round 3: screen file and image limits ----------
+
+const BUILD_URL = new URL("../skills/readmereel/scripts/lib/build.mjs", import.meta.url).href;
+// Runs prepareScreen in a child process with a time limit, so a read that blocks (a FIFO) fails the test instead of
+// hanging the run. Returns the error message, or "ok".
+function prepInChild(base) {
+  const code = `import { prepareScreen } from ${JSON.stringify(BUILD_URL)};
+    import { mkdtempSync } from "node:fs"; import { tmpdir } from "node:os"; import { join } from "node:path";
+    try { prepareScreen({ type: "ui", html: "screens/home.html" }, "s5", { baseDir: ${JSON.stringify(base)}, projectDir: mkdtempSync(join(tmpdir(), "rr-")), field: "scenes[4].html" }); console.log("ok"); }
+    catch (e) { console.log(e.message); }`;
+  const r = spawnSync(process.execPath, ["--input-type=module", "-e", code], { encoding: "utf8", timeout: 10000 });
+  return r.error ? `child failed: ${r.error.code}` : r.stdout.trim();
+}
+const mkfifo = (path) => assert.equal(spawnSync("mkfifo", [path]).status, 0, "mkfifo");
+
+test("round 3 G/H: a FIFO as the screen file or as an image is refused without reading it", () => {
+  const screen = screenBase({});
+  mkfifo(join(screen, "screens/home.html"));
+  assert.equal(prepInChild(screen), "scenes[4].html: the screen file is not a file: screens/home.html");
+  const image = screenBase({ "screens/home.html": '<img src="shots/a.png">' });
+  mkfifo(join(image, "screens/shots/a.png"));
+  assert.equal(prepInChild(image), "scenes[4].html: image is not a file: shots/a.png");
+});
+
+test("round 3 H: a screen file over 256 KB is refused before it is read", () => {
+  const big = screenBase({});
+  const fd = openSync(join(big, "screens/home.html"), "w");
+  ftruncateSync(fd, 256 * 1024 + 1); // sparse: refusing it must not depend on reading it
+  closeSync(fd);
+  assert.throws(() => prep(big), { message: "scenes[4].html: the screen file is over 256 KB: screens/home.html" });
+  const edge = screenBase({ "screens/home.html": "<p>" + "a".repeat(256 * 1024 - 3) });
+  assert.ok(prep(edge).html.startsWith("<p>aaa"), "exactly 256 KB is allowed");
+});
+
+test("round 3 I: image references are replaced in one pass, exactly, and capped at 64 images", () => {
+  const files = { "screens/home.html": "" };
+  let html = "<style>.x{background:url(img/0.png)} .y{background:url(\"img/1.png\"),url(img/10.png)}</style>";
+  for (let k = 0; k < 64; k++) {
+    files[`screens/img/${k}.png`] = PNG;
+    html += `<img src="img/${k}.png" alt="img/${k}.png" title="img/${k}.png">`;
+  }
+  html += `<p style="background:url(img/1.png)">t</p>`;
+  const base = screenBase({});
+  mkdirSync(join(base, "screens/img"));
+  for (const [rel, body] of Object.entries({ ...files, "screens/home.html": html })) writeFileSync(join(base, rel), body);
+  const screen = prep(base);
+  for (let k = 0; k < 64; k++) {
+    assert.ok(screen.html.includes(`<img src="assets/screens/s5-${k + 1}.png" alt="img/${k}.png" title="img/${k}.png">`), `img ${k}`);
+  }
+  assert.ok(screen.html.includes('<p style="background:url(&quot;assets/screens/s5-2.png&quot;)">'), screen.html.slice(-200));
+  assert.ok(screen.css.includes('.screen-s5 .x{background:url("assets/screens/s5-1.png")}'), screen.css);
+  assert.ok(screen.css.includes('.screen-s5 .y{background:url("assets/screens/s5-2.png"),url("assets/screens/s5-11.png")}'), screen.css);
+  // one more image is refused
+  writeFileSync(join(base, "screens/img/64.png"), PNG);
+  writeFileSync(join(base, "screens/home.html"), `${html}<img src="img/64.png">`);
+  assert.throws(() => prep(base), { message: "scenes[4].html: the screen uses more than 64 images" });
+});
+
+test("round 3 I: thousands of image references stay fast", () => {
+  const base = screenBase({ "screens/shots/a.png": PNG });
+  writeFileSync(join(base, "screens/home.html"), '<img src="shots/a.png">'.repeat(9000));
+  const t = performance.now();
+  const screen = prep(base);
+  assert.ok(performance.now() - t < 1500, `took ${(performance.now() - t).toFixed(0)} ms`);
+  assert.equal(screen.html.split("assets/screens/s5-1.png").length - 1, 9000);
+});
+
+test("round 3 J: a hard-linked image or screen file is refused", () => {
+  const outside = tmpDir();
+  writeFileSync(join(outside, "secret.png"), PNG);
+  const img = screenBase({ "screens/home.html": '<img src="shots/a.png">' });
+  linkSync(join(outside, "secret.png"), join(img, "screens/shots/a.png"));
+  assert.throws(() => prep(img), { message: "scenes[4].html: image has other hard links (refused, it may be a file from outside the project): shots/a.png" });
+  const page = screenBase({});
+  writeFileSync(join(outside, "page.html"), "<p>secret</p>");
+  linkSync(join(outside, "page.html"), join(page, "screens/home.html"));
+  assert.throws(() => prep(page), /scenes\[4\]\.html: the screen file has other hard links/);
+  const story = { ...onlyHookAndEnd(), logo: "logo.png" };
+  const logo = tmpDir();
+  linkSync(join(outside, "secret.png"), join(logo, "logo.png"));
+  assert.throws(() => buildProject(story, "wide", { baseDir: logo, outDir: tmpDir(), plan: planFilm(story) }), /^Error: logo: image has other hard links/);
 });
