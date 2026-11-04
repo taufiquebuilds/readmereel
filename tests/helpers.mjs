@@ -22,3 +22,21 @@ export function validStory() {
     accent: "#0f766e",
   };
 }
+
+export function validStory2() {
+  return {
+    version: 2,
+    name: "agencyrecap",
+    url: "github.com/taufiquebuilds/agencyrecap",
+    install: "docker compose up -d",
+    accent: "#1f7a4d",
+    style: "midnight",
+    scenes: [
+      { type: "hook", lines: ["40 clients.", "40 reports.", "Every single month."], accentWords: ["single", "month."], count: { line: 0, to: 40 } },
+      { type: "title", promise: "Monthly client reports that send themselves" },
+      { type: "list", items: ["Branded PDF every month", "Never sends twice", "Free to self-host"] },
+      { type: "counter", items: [{ value: 4812, label: "Sessions", note: "up 10%" }] },
+      { type: "end" },
+    ],
+  };
+}
