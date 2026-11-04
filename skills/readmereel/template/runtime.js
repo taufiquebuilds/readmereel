@@ -183,8 +183,15 @@ var RR = (function () {
     }
     const overlaps = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
     const inside = (a, b) => a.x >= b.x && a.y >= b.y && a.x + a.w <= b.x + b.w && a.y + a.h <= b.y + b.h;
-    // A box grown until it cuts no text box: each text box it overlaps but does not hold is taken whole.
-    function widen(box, texts) {
+    // A rect cut by every box that clips it (overflow not visible, and the window body), or null if nothing shows.
+    function clip(rc, clips) {
+      let x0 = rc.x, y0 = rc.y, x1 = rc.x + rc.w, y1 = rc.y + rc.h;
+      for (const c of clips) { x0 = Math.max(x0, c.x); y0 = Math.max(y0, c.y); x1 = Math.min(x1, c.x + c.w); y1 = Math.min(y1, c.y + c.h); }
+      return x1 - x0 > 0.5 && y1 - y0 > 0.5 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
+    }
+    // A box grown until it cuts no text box: each text box it overlaps but does not hold is taken whole, but never
+    // past bound (the window body), so the camera stays on the product.
+    function widen(box, texts, bound) {
       let b = { ...box };
       for (let pass = 0; pass < 12; pass++) {
         const cut = texts.find((t) => overlaps(t, b) && !inside(t, b));
@@ -192,7 +199,7 @@ var RR = (function () {
         const x0 = Math.min(b.x, cut.x), y0 = Math.min(b.y, cut.y);
         b = { x: x0, y: y0, w: Math.max(b.x + b.w, cut.x + cut.w) - x0, h: Math.max(b.y + b.h, cut.y + cut.h) - y0 };
       }
-      return b;
+      return bound ? clip(b, [bound]) || box : b;
     }
     // Moves a shot the least it can (up to 120 px each way) so that no frame edge cuts a text box, keeping the box
     // where it was allowed to be. Text boxes are frame rects at identity.
@@ -254,7 +261,7 @@ var RR = (function () {
       };
       return p.to && area(p.to) > area(p.from) ? "to" : "from";
     }
-    return { SAFE, geometry, rect, shot, widen, clean, focus, backShot, back, aim };
+    return { SAFE, geometry, rect, shot, clip, widen, clean, focus, backShot, back, aim };
   })();
 
   // ---------- transitions (built inside each scene; the next scene starts T before this one ends) ----------
@@ -358,16 +365,23 @@ var RR = (function () {
         const disc = target.getAttribute("data-zoom-disc");
         if (disc) {
           // The target's own colour floods the frame (the green-tick move): a disc the size and colour of the target,
-          // on it from end - 0.22, grows past the corners and turns into the next ground over its last 40%.
+          // on it from end - 0.3 (the tick itself growing, as in the prototype), covers the frame by end - 0.06 and
+          // turns into the next ground over end - 0.15 -> end - 0.045 (the next scene is shown from end - 0.045), so the
+          // change of colour is seen, not cut.
           const r = Math.max(4, Math.max(target.offsetWidth, target.offsetHeight) / 2);
           const dot = document.createElement("div");
           dot.className = "zoom-dot";
           dot.setAttribute("data-layout-ignore", "");
+          // A crisp disc: motion blur's capture of a fast-growing layer let parts of the screen show through it.
+          dot.setAttribute("data-motion-blur", "off");
           Object.assign(dot.style, { position: "absolute", left: cx - r + "px", top: cy - r + "px", width: 2 * r + "px", height: 2 * r + "px", borderRadius: "50%", background: disc, opacity: "0", zIndex: "50", pointerEvents: "none" });
           R.appendChild(dot);
-          tl.set(dot, { opacity: 1 }, end - 0.22)
-            .fromTo(dot, { scale: 1 }, { scale: Math.ceil((Math.hypot(W, H) / r) * 1.1), duration: 0.22, ease: "power2.in", immediateRender: false }, end - 0.22)
-            .fromTo(dot, { backgroundColor: disc }, { backgroundColor: D.nextGround || disc, duration: 0.09, ease: "none", immediateRender: false }, end - 0.09);
+          // Once the disc is on, the diving camera opts out of motion blur: HyperFrames' capture would otherwise
+          // redraw parts of it, sharp, above the disc.
+          tl.set(cam, { attr: { "data-motion-blur": "off" } }, end - 0.3)
+            .set(dot, { opacity: 1 }, end - 0.3)
+            .fromTo(dot, { scale: 1 }, { scale: Math.ceil((Math.hypot(W, H) / r) * 1.1), duration: 0.24, ease: "power3.in", immediateRender: false }, end - 0.3)
+            .fromTo(dot, { backgroundColor: disc }, { backgroundColor: D.nextGround || disc, duration: 0.105, ease: "power1.inOut", immediateRender: false }, end - 0.15);
           break;
         }
         // Into the same ground a dot would only read as a hole: the camera dives and the next scene sharpens in.

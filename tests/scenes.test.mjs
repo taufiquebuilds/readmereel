@@ -181,8 +181,13 @@ test("ui zoom exit: chips and caption leave first, and a coloured tick becomes t
   assert.match(ui, /zt\.setAttribute\("data-zoom-disc", disc\)/);
   const runtime = readFileSync(join(TEMPLATE, "runtime.js"), "utf8");
   assert.match(runtime, /const disc = target\.getAttribute\("data-zoom-disc"\)/);
-  // The disc turns into the next ground over the last 40% of its growth.
-  assert.match(runtime, /backgroundColor: D\.nextGround \|\| disc, duration: 0\.09[^)]*\}, end - 0\.09\)/);
+  // The disc covers the frame by end - 0.06, and turns into the next ground visibly, over end - 0.15 -> end - 0.045.
+  assert.match(runtime, /scale: Math\.ceil\(\(Math\.hypot\(W, H\) \/ r\) \* 1\.1\), duration: 0\.24, ease: "power3\.in", immediateRender: false \}, end - 0\.3\)/);
+  assert.match(runtime, /backgroundColor: D\.nextGround \|\| disc, duration: 0\.105[^)]*\}, end - 0\.15\)/);
+  // From the disc on, the camera opts out of motion blur (its redraw would land above the disc).
+  assert.match(runtime, /tl\.set\(cam, \{ attr: \{ "data-motion-blur": "off" \} \}, end - 0\.3\)/);
+  // The screen-chosen colour is made opaque.
+  assert.match(ui, /disc = opaque\(bg\)/);
 });
 
 test("ui camera, tall: a pan is aimed at the side of the box where the screen acts", () => {
@@ -195,3 +200,20 @@ test("ui camera, tall: a pan is aimed at the side of the box where the screen ac
   assert.equal(RR.cam.aim(tallG, p, left), "from");
 });
 
+
+test("ui camera: text is measured as it shows, cut by its clipping boxes; a widened box stays on the window body", () => {
+  // An ellipsised line far wider than its 300 px box shows only inside the box; text wholly clipped away is gone.
+  assert.deepEqual(RR.cam.clip({ x: 100, y: 50, w: 4000, h: 20 }, [{ x: 90, y: 40, w: 300, h: 40 }]), { x: 100, y: 50, w: 290, h: 20 });
+  assert.equal(RR.cam.clip({ x: -5000, y: 5000, w: 900, h: 900 }, [{ x: 0, y: 0, w: 1460, h: 806 }]), null);
+  assert.deepEqual(RR.cam.clip({ x: 10, y: 10, w: 20, h: 20 }, []), { x: 10, y: 10, w: 20, h: 20 });
+  // widen never grows a box past its bound (the body), even when a text box reaches beyond it.
+  const body = { x: 230, y: 164, w: 1460, h: 806 };
+  assert.deepEqual(RR.cam.widen({ x: 300, y: 300, w: 200, h: 100 }, [{ x: 450, y: 320, w: 5000, h: 20 }], body), { x: 300, y: 300, w: 1390, h: 100 });
+});
+
+test("ui: the camera never redraws over the chip or caption (it opts out of motion blur)", () => {
+  const ui = scene("ui.html");
+  assert.match(ui, /<div class="ui-move" data-layout-allow-overflow data-motion-blur="off">/);
+  // Statically: an attribute switched by the timeline is not something to rely on for the capture.
+  assert.ok(!/"data-motion-blur": "on"/.test(ui));
+});

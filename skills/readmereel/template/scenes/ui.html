@@ -53,7 +53,7 @@ __SCREEN_STYLE__
 <div id="root" data-composition-id="__ID__" data-width="__W__" data-height="__H__" data-layout="__LAYOUT__" data-style="__STYLE__">
   <div class="ground ui-grid" aria-hidden="true" data-layout-ignore></div>
   <div class="cam">
-    <div class="ui-move" data-layout-allow-overflow><div class="ui-place"><div class="ui-win hero">
+    <div class="ui-move" data-layout-allow-overflow data-motion-blur="off"><div class="ui-place"><div class="ui-win hero">
       <div class="ui-chrome"><i></i><i></i><i></i><span class="ui-url" data-ui-text data-layout-ignore>__HOST__</span></div>
       <div class="ui-body">__SHOT____SCREEN__</div>
     </div></div></div>
@@ -108,17 +108,30 @@ __RUNTIME__
   const toFrame = (rc) => ({ x: wx + K * ((rc.left - bodyRect.left) / kb), y: wy + K * (BAR + (rc.top - bodyRect.top) / kb), w: (K * rc.width) / kb, h: (K * rc.height) / kb });
   // HTML screens: every line of text inside the body, so that no focus box and no frame edge cuts a word.
   const bodyFrame = { x: wx, y: wy + K * BAR, w: K * 1460, h: K * 806 };
+  // Text is taken as it shows: cut by every ancestor that clips its overflow (an ellipsised line is only as wide as its
+  // box) and by the body; text that does not show at all is left out.
   const texts = [];
   const screen = q(".ui-body > div > div");
   if (screen) {
+    const clipsOf = new Map();
+    const clips = (el) => {
+      if (!el || el === body) return [bodyFrame];
+      if (clipsOf.has(el)) return clipsOf.get(el);
+      const cs = getComputedStyle(el);
+      const own = cs.overflowX !== "visible" || cs.overflowY !== "visible" ? [toFrame(el.getBoundingClientRect())] : [];
+      const all = own.concat(clips(el.parentElement));
+      clipsOf.set(el, all);
+      return all;
+    };
     const walker = document.createTreeWalker(screen, NodeFilter.SHOW_TEXT);
     const range = document.createRange();
     for (let n = walker.nextNode(); n && texts.length < 3000; n = walker.nextNode()) {
       if (!n.textContent.trim()) continue;
       range.selectNodeContents(n);
+      const cut = clips(n.parentElement);
       for (const rc of Array.from(range.getClientRects())) {
-        const t = toFrame(rc);
-        if (t.w > 0.5 && t.h > 0.5 && t.x < bodyFrame.x + bodyFrame.w && t.x + t.w > bodyFrame.x && t.y < bodyFrame.y + bodyFrame.h && t.y + t.h > bodyFrame.y) texts.push(t);
+        const t = RR.cam.clip(toFrame(rc), cut);
+        if (t) texts.push(t);
       }
     }
   }
@@ -140,7 +153,7 @@ __RUNTIME__
 
   // Each focus box, widened to take whole any text it cuts; its push (and, tall, its pan); then the caption view.
   const band = { top, bottom: H - SAFE };
-  const rects = data.focus.map((f) => RR.cam.widen(RR.cam.rect(g, view, f.box), texts));
+  const rects = data.focus.map((f) => RR.cam.widen(RR.cam.rect(g, view, f.box), texts, bodyFrame));
   const plans = rects.map((r) => RR.cam.focus(g, r, texts, band));
   const bk = RR.cam.back(captionAt, end);
   // A pan runs while its box holds (from the end of the push until the next push or the ease-back), if there is time.
@@ -182,7 +195,9 @@ __RUNTIME__
       if (rc.width > 0 && rc.height > 0) {
         target = toFrame(rc);
         const alpha = /rgba\([^)]*,\s*([\d.]+)\)/.exec(bg);
-        if (bg && bg !== "transparent" && !(alpha && Number(alpha[1]) < 0.5)) disc = bg;
+        // A colour the screen chose, made opaque (a see-through disc would show the dive through it).
+        const opaque = (c) => c.replace(/rgba\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,[^)]*\)/, "rgb($1, $2, $3)");
+        if (bg && bg !== "transparent" && !(alpha && Number(alpha[1]) < 0.5)) disc = opaque(bg);
       }
     }
   }
@@ -232,7 +247,9 @@ __RUNTIME__
   });
   // Eases back for the caption, and is at rest by end - 0.45, when the exits take over.
   tl.fromTo(move, from, { ...back, duration: bk.duration, ease: "power2.inOut", immediateRender: false }, bk.t);
-  // Before a zoom exit the chip and the caption go: HyperFrames' motion blur redraws the diving camera above them.
+  // HyperFrames' motion blur redraws a moving element above its later siblings, so the camera (.ui-move) opts out of it
+  // for the whole scene (data-motion-blur="off" in the markup): no move can paint over the chip or the caption. Before
+  // a zoom exit they go anyway (end - 0.45 over 0.15 s).
   if (D.out === "zoom") tl.to(chips.concat(cap ? [cap] : []), { opacity: 0, filter: "blur(8px)", duration: 0.15, ease: "power2.in" }, end - 0.45);
 
   // The screen acts: classes flip and the change is animated. Opacity and position render their starting values up

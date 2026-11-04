@@ -621,3 +621,48 @@ test("hosts: each scene paints over the one before, but a scene leaving by carry
   const z2 = zOf(readFileSync(join(buildProject(story, "wide", { baseDir: tmpDir(), outDir: tmpDir(), plan }), "index.html"), "utf8"));
   assert.ok(ordered(z2, plan.scenes) && z2[1] > z2[3], `${z2}`);
 });
+
+// ---------- animated images are refused (a film frame must not depend on when it is drawn) ----------
+
+const chunk = (type, body = Buffer.alloc(0)) => {
+  const b = Buffer.alloc(12 + body.length);
+  b.writeUInt32BE(body.length, 0);
+  b.write(type, 4, "latin1");
+  body.copy(b, 8);
+  return b;
+};
+const IHDR = chunk("IHDR", Buffer.from([0, 0, 0, 10, 0, 0, 0, 10, 8, 6, 0, 0, 0]));
+const APNG = Buffer.concat([PNG.subarray(0, 8), IHDR, chunk("acTL", Buffer.alloc(8)), chunk("IDAT", Buffer.alloc(4)), chunk("IEND")]);
+const STILL_PNG = Buffer.concat([PNG.subarray(0, 8), IHDR, chunk("IDAT", Buffer.alloc(4)), chunk("IEND")]);
+// GIF: header, a 1x1 screen without a colour table, then image descriptors (each with a 1-byte LZW minimum and an empty data block).
+const gifOf = (frames) => Buffer.concat([Buffer.from("GIF89a\x01\x00\x01\x00\x00\x00\x00", "latin1"),
+  ...Array.from({ length: frames }, () => Buffer.from([0x21, 0xf9, 4, 0, 0, 0, 0, 0, 0x2c, 0, 0, 0, 0, 1, 0, 1, 0, 0, 2, 0])), Buffer.from([0x3b])]);
+const webpX = (flags) => Buffer.concat([Buffer.from("RIFF"), Buffer.from([30, 0, 0, 0]), Buffer.from("WEBPVP8X"), Buffer.from([10, 0, 0, 0, flags, 0, 0, 0, 9, 0, 0, 9, 0, 0])]);
+
+test("animated images are refused wherever they enter: screen images, inline data images, the ui shot and the logo", () => {
+  const animated = {
+    "a.png": APNG, "b.gif": gifOf(2), "c.webp": webpX(0x02),
+    "d.svg": '<svg xmlns="http://www.w3.org/2000/svg"><rect><animate attributeName="x" to="9" dur="1s"/></rect></svg>',
+    "e.svg": '<svg xmlns="http://www.w3.org/2000/svg"><set attributeName="fill" to="red"/></svg>',
+    "f.svg": '<svg xmlns="http://www.w3.org/2000/svg"><style>rect{animation:spin 1s infinite}@keyframes spin{to{opacity:0}}</style><rect/></svg>',
+  };
+  for (const [name, body] of Object.entries(animated)) {
+    const base = screenBase({ "screens/home.html": `<img src="shots/${name}">`, [`screens/shots/${name}`]: body });
+    assert.throws(() => prep(base), new RegExp(`^Error: scenes\\[4\\]\\.html: image is animated \\(a film frame must not depend on when it is drawn\\): shots/${name.replace(".", "\\.")}$`), name);
+  }
+  // The same files, still, are fine.
+  const still = screenBase({ "screens/home.html": '<img src="shots/a.png"><img src="shots/b.gif"><img src="shots/c.webp"><img src="shots/d.svg">',
+    "screens/shots/a.png": STILL_PNG, "screens/shots/b.gif": gifOf(1), "screens/shots/c.webp": webpX(0x10), "screens/shots/d.svg": '<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>' });
+  assert.ok(prep(still).html.includes("assets/screens/s5-4.svg"));
+  // An inline data image is checked too.
+  const inline = screenBase({ "screens/home.html": `<img src="data:image/gif;base64,${gifOf(3).toString("base64")}">` });
+  assert.throws(() => prep(inline), /^Error: scenes\[4\]\.html: image is animated \(a film frame must not depend on when it is drawn\): an inline data image$/);
+  // The ui shot and the logo.
+  const { story, base } = uiStory();
+  writeFileSync(join(base, "shots/dash.png"), APNG);
+  assert.throws(() => buildProject(story, "wide", { baseDir: base, outDir: tmpDir(), plan: planFilm(story) }), /^Error: scenes\[2\]\.image: image is animated/);
+  const logo = { ...onlyHookAndEnd(), logo: "logo.png" };
+  const lbase = tmpDir();
+  writeFileSync(join(lbase, "logo.png"), APNG);
+  assert.throws(() => buildProject(logo, "wide", { baseDir: lbase, outDir: tmpDir(), plan: planFilm(logo) }), /^Error: logo: image is animated/);
+});

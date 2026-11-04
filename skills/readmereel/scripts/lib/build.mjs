@@ -112,6 +112,54 @@ function readStoryFile(real, field, what, shown, maxBytes, limit) {
   } finally { closeSync(fd); }
 }
 
+// True when an image would move on its own (APNG, a GIF with more than one frame, an animated WebP, an SVG with SMIL
+// or CSS animation): a film frame must not depend on when the browser happens to draw it. Truncated or odd data reads
+// as still; the kind check before this has already made sure the bytes are the format the name says.
+export function isAnimated(data, ext) {
+  if (ext === ".png") {
+    // An acTL chunk before the first IDAT makes a PNG an APNG.
+    for (let i = 8; i + 8 <= data.length;) {
+      const len = data.readUInt32BE(i), type = data.toString("latin1", i + 4, i + 8);
+      if (type === "acTL") return true;
+      if (type === "IDAT" || type === "IEND") return false;
+      i += 12 + len;
+    }
+    return false;
+  }
+  if (ext === ".gif") {
+    if (data.length < 13) return false;
+    let i = 13 + (data[10] & 0x80 ? 3 * 2 ** ((data[10] & 7) + 1) : 0);
+    let frames = 0;
+    const skipBlocks = () => { while (i < data.length && data[i] !== 0) i += data[i] + 1; i++; };
+    while (i < data.length) {
+      const b = data[i];
+      if (b === 0x3b) break;
+      if (b === 0x21) { i += 2; skipBlocks(); continue; }
+      if (b !== 0x2c) break;
+      if (++frames > 1) return true;
+      const packed = data[i + 9];
+      i += 10 + (packed & 0x80 ? 3 * 2 ** ((packed & 7) + 1) : 0) + 1;
+      skipBlocks();
+    }
+    return false;
+  }
+  if (ext === ".webp") {
+    if (data.toString("latin1", 12, 16) === "VP8X" && data.length > 20 && data[20] & 0x02) return true;
+    for (let i = 12; i + 8 <= data.length;) {
+      const type = data.toString("latin1", i, i + 4), len = data.readUInt32LE(i + 4);
+      if (type === "ANIM" || type === "ANMF") return true;
+      i += 8 + len + (len & 1);
+    }
+    return false;
+  }
+  if (ext === ".svg") {
+    const text = data.toString("utf8");
+    return /<\s*(?:[a-z]+:)?(?:animate|animateTransform|animateMotion|animateColor|set)\b/i.test(text) || /@keyframes|animation(?:-name)?\s*:/i.test(text);
+  }
+  return false;
+}
+const ANIMATED = (field, shown) => new Error(`${field}: image is animated (a film frame must not depend on when it is drawn): ${shown}`);
+
 // Copies an image named in the story into the project: refused when it is a symlink, resolves outside baseDir, has
 // other hard links, is over 25 MB or is not the kind of image its extension says. The bytes checked are the bytes written.
 function copyImage(projectDir, baseDir, src, rel, field, shown) {
@@ -121,6 +169,7 @@ function copyImage(projectDir, baseDir, src, rel, field, shown) {
   const data = readStoryFile(real, field, "image", shown, IMAGE_MAX_BYTES, "25 MB");
   const head = data.subarray(0, extname(src).toLowerCase() === ".svg" ? SVG_SNIFF : 16);
   if (!kind[1](head)) throw new Error(`${field}: image is not ${kind[0]} file: ${shown}`);
+  if (isAnimated(data, extname(src).toLowerCase())) throw ANIMATED(field, shown);
   mkdirSync(dirname(join(projectDir, rel)), { recursive: true });
   writeFileSync(join(projectDir, rel), data);
   return rel;
@@ -150,6 +199,13 @@ export function prepareScreen(scene, id, { baseDir, projectDir, field = "html" }
     return rel;
   };
   const { html, css } = sanitizeScreen(readScreen(real, field, scene.html), `screen-${id}`, { mapImage });
+  // Inline data images (the sanitizer keeps base64 PNG, GIF, WebP and SVG ones) are checked like files.
+  const INLINE = { png: ".png", gif: ".gif", webp: ".webp", "svg+xml": ".svg" };
+  for (const m of `${html} ${css}`.matchAll(/data:image\/(png|gif|webp|svg\+xml)(;base64)?,([A-Za-z0-9+\/=%._~-]+)/gi)) {
+    let bytes;
+    try { bytes = m[2] ? Buffer.from(m[3], "base64") : Buffer.from(decodeURIComponent(m[3]), "utf8"); } catch { continue; }
+    if (isAnimated(bytes, INLINE[m[1].toLowerCase()])) throw ANIMATED(field, "an inline data image");
+  }
   for (const [path, rel] of copies) copyImage(projectDir, baseDir, resolve(dirname(file), path), rel, field, path);
   const frame = "position:relative!important;overflow:clip!important;contain:paint!important;transform:none!important;zoom:1!important;z-index:auto!important";
   const markup = `<div class="screen-frame-${id}" style="${frame}"><div class="screen-${id}">${html}</div></div>`;
