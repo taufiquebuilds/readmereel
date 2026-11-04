@@ -71,23 +71,23 @@ __RUNTIME__
     tl.fromTo(it.querySelector(".counter-label"), { opacity: 0.3, filter: "blur(8px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.25, ease: "power2.out" }, shown)
       .fromTo(it.querySelector(".counter-figure"), { opacity: 0.3, y: 20, filter: "blur(4px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.55, ease: "expo.out" }, shown);
     const v = data[k].value;
-    // The roll starts from the value's own order of magnitude (4,812 from 1,000), so the figure reads full width
-    // from the first frame instead of a lone "0".
+    // From 100 up the roll starts from the value's own order of magnitude (4,812 from 1,000), so the figure reads full
+    // width from the first frame; smaller values count up from 0.
     RR.roll(tl, value, RR.rollFrom(v), v, t, 1.0, RR.decimals(v));
     // As the number settles, its unit pops on (the plan's pop lands at +1.0) and the note blurs in.
     if (suffix) tl.fromTo(suffix, { opacity: 0, scale: 0.4 }, { opacity: 1, scale: 1, duration: 0.4, ease: "back.out(2.2)" }, t + 0.92);
     if (note) RR.blurIn(tl, note, t + 0.9, { duration: 0.18 });
   });
   // An accent glow behind the first figure, and a slow lean in towards it while the row holds (on the row, an inner
-  // wrapper: the root's children belong to the transitions). Scaling about the figure's centre keeps the zoom exit's
-  // dive point, measured from layout, on target.
+  // wrapper: the root's children belong to the transitions), at rest 0.45 s before the end. Scaling about the
+  // figure's centre keeps the zoom exit's dive point, measured from layout, on target.
   const c = RR.centre(figures[0], S.R);
   const row = q(".counter-row");
   const rc = RR.centre(row, S.R);
   const origin = (c.x - rc.x + row.offsetWidth / 2) + "px " + (c.y - rc.y + row.offsetHeight / 2) + "px";
   q(".counter-glow").style.background = "radial-gradient(900px 700px at " + c.x + "px " + c.y + "px, color-mix(in srgb, var(--accent) 15%, transparent), transparent 70%)";
   tl.fromTo(q(".counter-glow"), { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "power1.out" }, 0)
-    .fromTo(row, { scale: 1 }, { scale: 1.03, transformOrigin: origin, duration: Math.max(0.1, D.duration - starts[0]), ease: "none" }, starts[0]);
+    .fromTo(row, { scale: 1 }, { scale: 1.03, transformOrigin: origin, duration: Math.max(0.1, D.duration - 0.45 - starts[0]), ease: "power1.out" }, starts[0]);
   S.done();
 })();
 </script>

@@ -32,6 +32,11 @@ const AUDIO = /\.(mp3|m4a|wav|ogg)$/i;
 const HTML = /\.html?$/i;
 const PLACEHOLDER = /<[^>]+>/;
 const MIN_STATE_GAP = 0.4;
+// A state's class: one plain class name, and not one the scene templates or the runtime use (the sanitizer removes
+// those from screens for the same reason).
+const STATE_CLASS = (c) => /^[A-Za-z_][A-Za-z0-9_-]*$/.test(c)
+  && !["root", "scene-data", "clip", "hero", "cam", "ground"].includes(c.toLowerCase())
+  && !/^(?:hook|title|ui|terminal|counter|compare|list|end|zoom|screen)-/i.test(c);
 
 function text(errors, label, value, max) {
   if (typeof value !== "string" || value.trim() === "") errors.push(`${label}: required text`);
@@ -128,7 +133,7 @@ const DEFAULT_SIZE = [1600, 1000];
 const IMAGE_SIZE_MAX_BYTES = 25 * 1024 * 1024;
 const SOF = (m) => m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc;
 
-// Width and height from a PNG, JPEG or SVG header, or the default box. Only a plain file is read (no FIFO, device or
+// Width and height from a PNG, JPEG, GIF, WebP or SVG header, or the default box. Only a plain file is read (no FIFO, device or
 // directory, no file with other hard links, nothing over 25 MB), only when its real path is inside baseDir (when one is
 // given, so a symlink cannot point out of the story folder), and only the header bytes it needs.
 export function imageSize(path, baseDir) {
@@ -160,6 +165,16 @@ export function imageSize(path, baseDir) {
         if (m[1] === 0xff) { i += 1; continue; }
         if (SOF(m[1])) return [m.readUInt16BE(7), m.readUInt16BE(5)];
         i += 2 + m.readUInt16BE(2);
+      }
+    }
+    if (head.length >= 10 && head.toString("latin1", 0, 4) === "GIF8") return [head.readUInt16LE(6), head.readUInt16LE(8)];
+    if (head.length >= 16 && head.toString("latin1", 0, 4) === "RIFF" && head.toString("latin1", 8, 12) === "WEBP") {
+      const chunk = head.toString("latin1", 12, 16);
+      if (chunk === "VP8X" && head.length >= 30) return [1 + head.readUIntLE(24, 3), 1 + head.readUIntLE(27, 3)];
+      if (chunk === "VP8 " && head.length >= 30) return [head.readUInt16LE(26) & 0x3fff, head.readUInt16LE(28) & 0x3fff];
+      if (chunk === "VP8L" && head.length >= 25 && head[20] === 0x2f) {
+        const bits = head.readUInt32LE(21);
+        return [1 + (bits & 0x3fff), 1 + ((bits >>> 14) & 0x3fff)];
       }
     }
     const svg = head.toString("utf8").match(/<svg\b[^>]*>/i)?.[0];
@@ -290,6 +305,9 @@ function validateUi(errors, at, scene, baseDir) {
         for (const key of Object.keys(st)) if (!["at", "selector", "set"].includes(key)) errors.push(`${label}.${key}: unknown field`);
         text(errors, `${label}.selector`, st.selector, 200);
         text(errors, `${label}.set`, st.set, 40);
+        if (typeof st.set === "string" && st.set.trim() !== "" && !STATE_CLASS(st.set)) {
+          errors.push(`${label}.set: must be a class name (letters, digits, - and _) that the template does not use`);
+        }
         if (typeof st.at !== "number" || !Number.isFinite(st.at) || st.at < 0) errors.push(`${label}.at: must be a time in seconds`);
         else if (i > 0 && typeof scene.states[i - 1]?.at === "number" && st.at - scene.states[i - 1].at < MIN_STATE_GAP - 1e-9) {
           errors.push(`${label}.at: states must be at least ${MIN_STATE_GAP} s apart`);

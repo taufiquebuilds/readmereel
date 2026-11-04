@@ -95,11 +95,12 @@ var RR = (function () {
     const d = decimals(value);
     return (neg ? "-" : "") + Number(int).toLocaleString("en-US") + (d ? "." + frac.slice(0, d) : "");
   }
-  // Where a counter's roll starts: the smallest number with as many whole digits as the value (4,812 -> 1,000,
-  // 4.5 -> 1, -126 -> -100), so the rolling figure is as wide as the landed one; 0 for values under 1.
+  // Where a counter's roll starts: 0 for values under 100 (a short climb reads as counting); from 100 up, the smallest
+  // number with as many whole digits as the value (4,812 -> 1,000, -126 -> -100), so the rolling figure is as wide as
+  // the landed one.
   function rollFrom(value) {
+    if (Math.abs(value) < 100) return 0;
     const digits = String(Math.trunc(Math.abs(value))).length;
-    if (Math.abs(value) < 1) return 0;
     return Math.sign(value) * Math.pow(10, digits - 1);
   }
   // Rolls el's text from `from` to `to`; the landed frame always reads numText(to) exactly.
@@ -202,7 +203,8 @@ var RR = (function () {
         break;
       case "carry":
       case "blur":
-        tl.fromTo(R, { opacity: 0 }, { opacity: 1, duration: 0.15, ease: "power2.out" }, D.in === "carry" ? 0.15 : 0);
+        // A blur dissolve is short (0.1 s): between a dark and a light scene its midpoint is a flat grey with no ink.
+        tl.fromTo(R, { opacity: 0 }, { opacity: 1, duration: D.in === "carry" ? 0.15 : 0.1, ease: "power2.out" }, D.in === "carry" ? 0.15 : 0);
         tl.fromTo(content(S), { filter: "blur(8px)" }, { filter: "blur(0px)", duration: 0.2, ease: "power2.out" }, 0.1);
         break;
       default: break; // first scene: no entrance transition

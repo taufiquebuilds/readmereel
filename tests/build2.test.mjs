@@ -1,9 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { closeSync, existsSync, ftruncateSync, linkSync, mkdirSync, openSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, ftruncateSync, linkSync, mkdirSync, openSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildProject, LAYOUTS, prepareScreen } from "../skills/readmereel/scripts/lib/build.mjs";
+import { buildProject, counterText, LAYOUTS, prepareScreen } from "../skills/readmereel/scripts/lib/build.mjs";
 import { planFilm } from "../skills/readmereel/scripts/lib/plan.mjs";
 import { tmpDir, validStory2 } from "./helpers.mjs";
 
@@ -437,4 +437,167 @@ test("round 4 L: an image over 25 MB is refused from the open file, before it is
   const project = tmpDir();
   prepareScreen({ type: "ui", html: "screens/home.html" }, "s5", { baseDir: ok, projectDir: project, field: "scenes[4].html" });
   assert.deepEqual(readFileSync(join(project, "assets/screens/s5-1.png")), PNG, "the copy is the bytes that were checked");
+});
+
+// ---------- ui (Task 6) ----------
+
+// A PNG whose header says w x h (the build reads the size from it, after copying).
+function pngOf(w, h) {
+  const b = Buffer.alloc(33);
+  PNG.copy(b, 0, 0, 8);
+  b.writeUInt32BE(13, 8);
+  b.write("IHDR", 12, "latin1");
+  b.writeUInt32BE(w, 16);
+  b.writeUInt32BE(h, 20);
+  return b;
+}
+
+// A story with an image ui (scenes[2]) and an HTML ui (scenes[3]), and a folder holding their files.
+function uiStory() {
+  const base = tmpDir();
+  mkdirSync(join(base, "shots"));
+  mkdirSync(join(base, "screens/img"), { recursive: true });
+  writeFileSync(join(base, "shots/dash.png"), pngOf(1600, 1000));
+  writeFileSync(join(base, "screens/img/logo.png"), PNG);
+  writeFileSync(join(base, "screens/dash.html"),
+    `<style>body{background:#fff} .sent .was{opacity:0} #st2 .now{color:green}</style>
+<main><img src="img/logo.png"><table><tr><td><div class="status" id="st1"><span class="was">Scheduled</span><span class="now"><span class="tick">✓</span>Sent</span></div></td></tr>
+<tr><td><div class="status" id="st2" onclick="x()"><span class="was">Scheduled</span><span class="now"><span class="tick">✓</span>Sent</span></div></td></tr></table></main><script>bad()</script>`);
+  const story = validStory2();
+  story.scenes.splice(2, 0,
+    { type: "ui", image: "shots/dash.png", focus: [{ box: [100, 200, 400, 300], label: "07:00 on the <4th>" }, { box: [800, 0, 800, 1000] }], caption: "Sent. By itself." },
+    { type: "ui", html: "screens/dash.html", focus: [{ box: [600, 100, 500, 300], label: "Status" }],
+      states: [{ at: 1.2, selector: ".status", set: "sent" }, { at: 1.8, selector: "#st2", set: "seen" }], caption: "Sent & done" });
+  story.scenes.splice(4, 1); // drop the list: 6 scenes
+  return { story, base };
+}
+const uiFiles = (layout = "wide") => {
+  const { story, base } = uiStory();
+  const plan = planFilm(story);
+  const dir = buildProject(story, layout, { baseDir: base, outDir: tmpDir(), plan });
+  return { dir, plan, img: readFileSync(join(dir, "compositions/s3-ui.html"), "utf8"), html: readFileSync(join(dir, "compositions/s4-ui.html"), "utf8") };
+};
+
+test("ui image: the image is copied, shown in the window body, and its size gives the box scale and offsets", () => {
+  for (const layout of ["wide", "tall"]) {
+    const { dir, img } = uiFiles(layout);
+    assert.deepEqual(readFileSync(join(dir, "assets/screens/s3.png")), pngOf(1600, 1000));
+    assert.ok(img.includes('<img class="ui-shot" src="assets/screens/s3.png" alt="">'), "the shot fills the window body");
+    // 1600 x 1000 contained in the 1460 x 806 body: height-bound, centred across.
+    const scale = 806 / 1000;
+    assert.deepEqual(sceneData(img).data.view, { width: 1600, height: 1000, scale, x: Number(((1460 - 1600 * scale) / 2).toFixed(4)), y: 0 });
+    // Image mode has no screen: the screen slots are empty, with no stray tokens.
+    assert.ok(!img.includes("screen-frame-") && !img.includes("screen-s3"), "no screen markup");
+    assert.ok(!/__[A-Z][A-Z0-9_]*__/.test(img), "no placeholders left");
+  }
+});
+
+test("ui image: a wide image is width-bound and centred down the body", () => {
+  const { story, base } = uiStory();
+  writeFileSync(join(base, "shots/dash.png"), pngOf(2920, 806));
+  const dir = buildProject(story, "wide", { baseDir: base, outDir: tmpDir(), plan: planFilm(story) });
+  const view = sceneData(readFileSync(join(dir, "compositions/s3-ui.html"), "utf8")).data.view;
+  assert.deepEqual(view, { width: 2920, height: 806, scale: 0.5, x: 0, y: Number(((806 - 403) / 2).toFixed(4)) });
+});
+
+test("ui image: a symlinked or fake image is refused and names the field", () => {
+  const { story, base } = uiStory();
+  writeFileSync(join(base, "shots/dash.png"), "<html>not a png</html>");
+  assert.throws(() => buildProject(story, "wide", { baseDir: base, outDir: tmpDir(), plan: planFilm(story) }),
+    /^Error: scenes\[2\]\.image: image is not a PNG file: shots\/dash\.png$/);
+  const outside = tmpDir();
+  writeFileSync(join(outside, "secret.png"), pngOf(10, 10));
+  rmSync(join(base, "shots/dash.png"));
+  symlinkSync(join(outside, "secret.png"), join(base, "shots/dash.png"));
+  assert.throws(() => buildProject(story, "wide", { baseDir: base, outDir: tmpDir(), plan: planFilm(story) }),
+    /^Error: scenes\[2\]\.image: image is a symbolic link: shots\/dash\.png$/);
+});
+
+test("ui html: the sanitized screen sits in the window body inside its fixed frame, with its own scoped style", () => {
+  for (const layout of ["wide", "tall"]) {
+    const { dir, html } = uiFiles(layout);
+    const body = html.match(/<div class="ui-body">([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>\s*<\/div>\s*<div class="ui-target"/);
+    assert.ok(body, "the screen is inside .ui-body");
+    assert.ok(body[1].startsWith('<div class="screen-frame-s4" style="position:relative!important;'), body[1].slice(0, 120));
+    assert.ok(body[1].includes('<div class="screen-s4"><main><img src="assets/screens/s4-1.png">'), "images rewritten to their copies");
+    assert.ok(!html.includes("onclick") && !html.includes("bad()"), "sanitized");
+    assert.ok(html.includes('id="screen-s4-st1"'), "ids are scoped");
+    assert.deepEqual(readFileSync(join(dir, "assets/screens/s4-1.png")), PNG);
+    // The screen's CSS is its own <style> element, scoped to .screen-s4, after the scene's stylesheet.
+    const styles = html.match(/<style>[\s\S]*?<\/style>/g);
+    assert.equal(styles.length, 2);
+    assert.ok(styles[1].includes(".screen-s4 .sent .was{opacity:0}"), styles[1]);
+    assert.ok(!html.includes('class="ui-shot"'), "no shot in html mode");
+    assert.deepEqual(sceneData(html).data.view, { width: 1460, height: 806, scale: 1, x: 0, y: 0 });
+    assert.ok(!/__[A-Z][A-Z0-9_]*__/.test(html), "no placeholders left");
+  }
+});
+
+test("ui html: states reach the scene data with selectors scoped to the screen", () => {
+  const { html } = uiFiles();
+  assert.deepEqual(sceneData(html).data.states, [
+    { at: 1.2, selector: ".status", set: "sent", match: ".screen-s4 .status" },
+    { at: 1.8, selector: "#st2", set: "seen", match: ".screen-s4 #screen-s4-st2" },
+  ]);
+});
+
+test("ui html: a state selector that cannot be scoped to the screen is refused and names the field", () => {
+  for (const [selector, why] of [["a{} b", "one CSS selector"], ["@media x", "one CSS selector"], ["", "one CSS selector"]]) {
+    const { story, base } = uiStory();
+    story.scenes[3].states = [{ at: 1, selector, set: "sent" }];
+    assert.throws(() => buildProject(story, "wide", { baseDir: base, outDir: tmpDir(), plan: planFilm(story) }),
+      new RegExp(`^Error: scenes\\[3\\]\\.states\\[0\\]\\.selector: .*${why}`), selector);
+  }
+});
+
+test("ui: chips, caption and the window's URL are filled, escaped and mapped to their fields", () => {
+  for (const layout of ["wide", "tall"]) {
+    const { img, html } = uiFiles(layout);
+    assert.ok(img.includes('<div class="ui-chip" data-focus="0"><i class="dot"></i><span data-field="scenes[2].focus[0].label">07:00 on the &lt;4th&gt;</span></div>'), "chip");
+    assert.ok(!img.includes('data-focus="1"'), "a focus without a label has no chip");
+    assert.ok(img.includes('<div class="ui-caption" data-field="scenes[2].caption">Sent. By itself.</div>'), "caption");
+    assert.ok(html.includes('<div class="ui-caption" data-field="scenes[3].caption">Sent &amp; done</div>'));
+    // The window's address pill shows the repo URL's host; it is product chrome (UI text) for the gate.
+    assert.ok(img.includes('<span class="ui-url" data-ui-text data-layout-ignore>github.com</span>'), "url host");
+    // The caption's fade and the chips cover the screen on purpose.
+    assert.ok(img.includes('<div class="ui-fade" data-layout-allow-occlusion></div>') && img.includes('<div class="ui-chips" data-layout-allow-occlusion>'));
+    assert.ok(img.includes('<div class="ui-win hero">'), "the window is the hero");
+    assert.ok(img.includes('<div class="ui-target" data-zoom-target'), "an invisible zoom target");
+  }
+});
+
+test("ui: without a caption the caption block is left out", () => {
+  const { story, base } = uiStory();
+  delete story.scenes[2].caption;
+  const dir = buildProject(story, "wide", { baseDir: base, outDir: tmpDir(), plan: planFilm(story) });
+  const img = readFileSync(join(dir, "compositions/s3-ui.html"), "utf8");
+  assert.ok(!img.includes('class="ui-caption"') && !img.includes('class="ui-capwrap"'), "no caption block");
+  assert.ok(!/__[A-Z][A-Z0-9_]*__/.test(img));
+});
+
+test("ui scene files follow the contract (the build adds only view, and scoped states, to the plan's data)", () => {
+  const { story, base } = uiStory();
+  const plan = planFilm(story);
+  const dir = buildProject(story, "tall", { baseDir: base, outDir: tmpDir(), plan });
+  for (const s of plan.scenes.filter((x) => x.type === "ui")) {
+    const html = readFileSync(join(dir, `compositions/${s.id}-ui.html`), "utf8");
+    assert.ok(html.includes(`<div id="root" data-composition-id="${s.id}" data-width="1080" data-height="1920" data-layout="tall" data-style="midnight">`));
+    assert.ok(html.includes(`RR.scene("${s.id}")`) && html.includes("var RR = (function () {"));
+    assert.ok(!/#root\.|\.(wide|tall|style-\w+)\b/.test(html.slice(html.indexOf("<style>"), html.indexOf("</style>"))));
+    const data = sceneData(html);
+    const { view, states, ...rest } = data.data;
+    const { states: planStates, ...planRest } = JSON.parse(JSON.stringify(s.data));
+    assert.deepEqual({ ...data, data: rest }, { ...JSON.parse(JSON.stringify(s)), data: planRest });
+    assert.ok(view);
+    if (planStates) assert.deepEqual(states.map(({ match, ...st }) => st), planStates);
+  }
+});
+
+test("counter values in the HTML use the runtime's rule: at most one decimal, cut, never rounded up", () => {
+  assert.equal(counterText(4812), "4,812");
+  assert.equal(counterText(12.5), "12.5");
+  assert.equal(counterText(99.95), "99.9");
+  assert.equal(counterText(-0.5), "-0.5");
+  assert.equal(counterText(-9999999), "-9,999,999");
+  assert.equal(counterText(999999.9), "999,999.9");
 });

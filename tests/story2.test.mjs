@@ -191,3 +191,38 @@ test("round 3 G: a JPEG whose size marker sits after large segments is still rea
   s.features[0].image = "../x.png";
   assert.deepEqual(toV2(s, dir).scenes[2].focus[0].box, [0, 0, 1600, 1000]);
 });
+
+test("ui states set a plain class name that is not one of the template's own", () => {
+  const dir = tmpDir();
+  mkdirSync(join(dir, "s"));
+  writeFileSync(join(dir, "s/screen.html"), "<div></div>");
+  const story = (set) => {
+    const s = validStory2();
+    s.scenes[2] = { type: "ui", html: "s/screen.html", focus: [{ box: [0, 0, 100, 100] }], states: [{ at: 1, selector: "#a", set }] };
+    return s;
+  };
+  assert.deepEqual(errs(story("sent"), dir), []);
+  assert.deepEqual(errs(story("is-on_2"), dir), []);
+  for (const bad of ["two words", "1st", ".sent", "a:b", "hero", "cam", "ui-chip", "screen-s3", "root"]) {
+    assert.ok(errs(story(bad), dir).includes("scenes[2].states[0].set: must be a class name (letters, digits, - and _) that the template does not use"), bad);
+  }
+});
+
+test("image sizes are read from GIF and WebP headers too", () => {
+  const dir = tmpDir();
+  const gif = Buffer.from("GIF89a\xb0\x04\x84\x03\x00\x00", "latin1"); // 1200 x 900 (the fallback is 1600 x 1000)
+  writeFileSync(join(dir, "a.gif"), gif);
+  const riff = (chunk, body) => Buffer.concat([Buffer.from("RIFF"), Buffer.from([0, 0, 0, 0]), Buffer.from("WEBP"), Buffer.from(chunk), Buffer.from([0, 0, 0, 0]), body]);
+  // VP8X: 24-bit width-1 and height-1 after 4 flag bytes.
+  writeFileSync(join(dir, "x.webp"), riff("VP8X", Buffer.from([0, 0, 0, 0, 0xaf, 0x04, 0x00, 0x83, 0x03, 0x00])));
+  // VP8 (lossy): frame tag, start code, then 14-bit width and height.
+  writeFileSync(join(dir, "l.webp"), riff("VP8 ", Buffer.from([0, 0, 0, 0x9d, 0x01, 0x2a, 0xb0, 0x04, 0x84, 0x03])));
+  // VP8L (lossless): signature 0x2f, then 14-bit width-1 and height-1 packed.
+  const w = 1200 - 1, h = 900 - 1;
+  const bits = w | (h << 14);
+  writeFileSync(join(dir, "ll.webp"), riff("VP8L", Buffer.from([0x2f, bits & 0xff, (bits >> 8) & 0xff, (bits >> 16) & 0xff, (bits >>> 24) & 0xff])));
+  assert.deepEqual(imageSize(join(dir, "a.gif")), [1200, 900]);
+  assert.deepEqual(imageSize(join(dir, "x.webp")), [1200, 900]);
+  assert.deepEqual(imageSize(join(dir, "l.webp")), [1200, 900]);
+  assert.deepEqual(imageSize(join(dir, "ll.webp")), [1200, 900]);
+});

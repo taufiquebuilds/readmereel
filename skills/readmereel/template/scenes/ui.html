@@ -1,0 +1,240 @@
+<!doctype html>
+<html><head><meta charset="UTF-8" /></head><body><template>
+<style>
+  /* The product on screen: a browser window on a drafting grid, filmed by a camera that pushes in to each focus box.
+     Layers, back to front: the grid (.ground), the camera (.cam, the runtime's zoom element, never moved by this scene;
+     inside it .ui-move, this scene's own camera, and the zoom target), the focus chips, the caption.
+     Layout-check markers: the camera pushes the window past the frame on purpose (data-layout-allow-overflow); the chips
+     and the caption's fade cover the screen on purpose (data-layout-allow-occlusion); the address pill is window chrome,
+     texture rather than reading (data-layout-ignore). */
+  #root { position: absolute; inset: 0; overflow: hidden; background: var(--ground); font-family: "Inter", sans-serif; }
+  #root[data-tone="light"] { --gridline: #d6dce3; --grid-alpha: 0.55; --cap-ink: #0b0d10; }
+  #root[data-tone="dark"] { --gridline: rgba(255, 255, 255, 0.14); --grid-alpha: 0.55; --cap-ink: #f5f6f8; }
+  .ui-grid { position: absolute; inset: -200px; opacity: var(--grid-alpha); pointer-events: none;
+    background-image: linear-gradient(var(--gridline) 1px, transparent 1px), linear-gradient(90deg, var(--gridline) 1px, transparent 1px);
+    background-size: 64px 64px; }
+  .cam { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-origin: 0 0; }
+  .ui-move { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-origin: 0 0; }
+  /* The window's slot: tall scales the whole 1460 px window to 960 px here (the camera works on top of that). */
+  .ui-place { position: absolute; left: 0; top: 0; width: 1460px; height: 860px; transform-origin: 0 0; }
+  .ui-win { position: relative; width: 1460px; height: 860px; background: #fafafa; border-radius: 22px; overflow: hidden;
+    box-shadow: 0 50px 140px rgba(15, 23, 42, 0.28), 0 0 0 1px rgba(15, 23, 42, 0.08); color: #16181d; }
+  /* Tall: the window is a small card in a tall frame, so it sits on a deeper shadow to hold its own against the ground. */
+  #root[data-layout="tall"] .ui-win { box-shadow: 0 40px 120px rgba(15, 23, 42, 0.6), 0 0 0 1px rgba(15, 23, 42, 0.1); }
+  .ui-chrome { height: 54px; background: #fff; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; gap: 12px; padding: 0 22px; }
+  .ui-chrome i { width: 14px; height: 14px; border-radius: 50%; background: #d1d5db; display: block; flex: none; }
+  .ui-url { margin-left: 24px; font-size: 18px; line-height: 1.2; color: #5b6270; background: #f3f4f6; padding: 6px 18px; border-radius: 999px; white-space: nowrap; }
+  /* A fixed box: whatever the screen's own CSS does (a 1920 px body, huge content, z-index), it is clipped and contained
+     here and can neither grow the window nor paint over the chips and caption. */
+  .ui-body { position: relative; width: 1460px; height: 806px; background: #fff; overflow: hidden; contain: layout paint size; }
+  .ui-body > div { width: 100%; height: 100%; background: #fff; color: #16181d; font-size: 16px; line-height: 1.4; text-align: left; }
+  .ui-shot { display: block; width: 100%; height: 100%; object-fit: contain; background: #fff; }
+  .ui-target { position: absolute; pointer-events: none; }
+  /* Focus chips share one spot: the top-right action-safe corner (wide) or top centre (tall). */
+  .ui-chips { position: absolute; top: 54px; right: 96px; display: grid; justify-items: end; }
+  #root[data-layout="tall"] .ui-chips { top: 150px; left: 0; right: 0; justify-items: center; }
+  .ui-chip { grid-area: 1 / 1; display: flex; align-items: center; gap: 18px; background: #0b0d10; color: #fff; border-radius: 999px;
+    padding: 18px 34px; font-weight: 700; font-size: 40px; line-height: 1.2; letter-spacing: -0.01em; white-space: nowrap;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25); }
+  .ui-chip .dot { width: 18px; height: 18px; border-radius: 50%; background: var(--accent); flex: none; display: block; }
+  /* The caption sits over the bottom 22% of the frame on a soft fade of the ground. */
+  .ui-capwrap { position: absolute; left: 0; right: 0; bottom: 0; height: 36%; pointer-events: none; }
+  #root[data-layout="tall"] .ui-capwrap { height: 32%; }
+  .ui-fade { position: absolute; inset: 0; background: linear-gradient(to top, var(--ground) 0%, color-mix(in srgb, var(--ground) 92%, transparent) 42%, transparent 100%); }
+  .ui-caption { position: absolute; left: 0; right: 0; bottom: 70px; margin: 0 auto; text-align: center; font-weight: 900; font-size: 110px;
+    letter-spacing: -0.04em; line-height: 1.04; color: var(--cap-ink); white-space: nowrap; }
+  /* Tall balances up to two lines. (Only here: text-wrap and white-space share text-wrap-mode, so a balance declared
+     after nowrap would let the wide one-line caption wrap.) */
+  #root[data-layout="tall"] .ui-caption { bottom: 230px; font-size: 84px; text-wrap: balance; }
+  .ui-caption .w { display: inline-block; }
+  .ui-caption .acc { color: var(--accent-ink); }
+</style>
+__SCREEN_STYLE__
+<div id="root" data-composition-id="__ID__" data-width="__W__" data-height="__H__" data-layout="__LAYOUT__" data-style="__STYLE__">
+  <div class="ground ui-grid" aria-hidden="true" data-layout-ignore></div>
+  <div class="cam">
+    <div class="ui-move" data-layout-allow-overflow><div class="ui-place"><div class="ui-win hero">
+      <div class="ui-chrome"><i></i><i></i><i></i><span class="ui-url" data-ui-text data-layout-ignore>__HOST__</span></div>
+      <div class="ui-body">__SHOT____SCREEN__</div>
+    </div></div></div>
+    <div class="ui-target" data-zoom-target data-layout-ignore aria-hidden="true"></div>
+  </div>
+  <div class="ui-chips" data-layout-allow-occlusion>
+    __CHIPS__
+  </div>
+  __CAPTION__
+  <script type="application/json" class="scene-data">__DATA__</script>
+</div>
+<script>
+__RUNTIME__
+(() => {
+  // States: at each state's `at`, the class `set` is added to every element its selector matches inside the screen.
+  // The screen's CSS defines what that class looks like (e.g. `.sent .was { opacity: 0 }`); this scene only animates
+  // the change: inside each element, .was / [data-was] blur out, .now / [data-now] blur in and .tick / [data-pop]
+  // pop from nothing. Elements one selector matches flip one after another, like rows being sent.
+  const S = RR.scene("__ID__");
+  const { tl, R, D, q, qa, W, H, wide } = S;
+  const data = D.data;
+  const view = data.view;
+  const { focusStarts, captionAt } = D.beats;
+  const end = D.duration;
+  const REST = end - 0.45; // every camera move is over by now (the exits take over from here)
+  const SAFE = 40;
+  // The window: 1460 x 860 CSS px (a 54 px bar over the 1460 x 806 body), scaled by K and placed at (wx, wy).
+  const K = wide ? 1 : 960 / 1460;
+  const BAR = 54, WW = 1460 * K, WH = 860 * K;
+  const wx = Math.round((W - WW) / 2);
+  const wy = Math.round(wide ? (H - WH) / 2 : H * 0.47 - WH / 2);
+  const place = q(".ui-place");
+  Object.assign(place.style, { left: wx + "px", top: wy + "px", transform: "scale(" + K + ")" });
+
+  // ---------- measure first (before any tween touches layout) ----------
+  const chips = qa(".ui-chip");
+  chips.forEach((c) => RR.fit(c, 40, W * (wide ? 0.6 : 0.86), 0.55));
+  const chipBox = q(".ui-chips");
+  const chipBottom = chips.length ? chipBox.offsetTop + Math.max(...chips.map((c) => c.offsetHeight)) : 0;
+  const top = Math.max(SAFE, chipBottom + 28);
+  const cap = q(".ui-caption");
+  let capTop = H - SAFE;
+  if (cap) {
+    if (wide) RR.fit(cap, 110, Math.round(W * 0.88), 0.55);
+    else RR.fitLines(cap, 84, Math.round(W * 0.88), 2, { breakBelow: 56 }); // a long word breaks rather than shrinks
+    // The caption owns the bottom 22% of the frame (or more, if it takes more).
+    capTop = Math.min(H * 0.78, H - cap.offsetHeight - parseFloat(getComputedStyle(cap).bottom)) - 24;
+  }
+
+  // A focus box (in the image's pixels, or the screen's CSS px) as a rect in frame px with the camera at rest.
+  const rectOf = (box) => ({
+    x: wx + K * (view.x + box[0] * view.scale),
+    y: wy + K * (BAR + view.y + box[1] * view.scale),
+    w: K * box[2] * view.scale,
+    h: K * box[3] * view.scale,
+  });
+  const clampTo = (v, lo, hi) => (lo <= hi ? Math.min(hi, Math.max(lo, v)) : (lo + hi) / 2);
+  // The camera (translate X, Y then scale s about the frame's top-left) that puts rect r's centre at (cx, cy): the
+  // window keeps covering the frame where it is big enough, but the box always stays inside the margins and [y0, y1].
+  function shot(r, s, cx, cy, y0, y1) {
+    let X = cx - s * (r.x + r.w / 2), Y = cy - s * (r.y + r.h / 2);
+    if (s * WW >= W) X = clampTo(X, W - s * (wx + WW), -s * wx);
+    if (s * WH >= H) Y = clampTo(Y, H - s * (wy + WH), -s * wy);
+    X = clampTo(X, SAFE - s * r.x, W - SAFE - s * (r.x + r.w));
+    Y = clampTo(Y, y0 - s * r.y, y1 - s * (r.y + r.h));
+    return { x: X, y: Y, scale: s };
+  }
+  const rects = data.focus.map((f) => rectOf(f.box));
+  // Each push: the box fills at most 80% of the frame's width (92% in tall, where the 1460 px screen is shown at 960)
+  // and fits under the chip; scale 1.2 to 2.6.
+  const FILL = wide ? 0.8 : 0.92;
+  const shots = rects.map((r) => {
+    const s = Math.min(2.6, Math.max(1.2, Math.min((FILL * W) / r.w, (0.9 * (H - SAFE - top)) / r.h)));
+    return shot(r, s, W / 2, H / 2, top, H - SAFE);
+  });
+  // Before the caption the camera eases back 10% and lifts the box clear of the caption.
+  const last = rects.at(-1);
+  const sBack = Math.max(1, Math.min(shots.at(-1).scale * 0.9, (0.95 * (capTop - top)) / last.h));
+  const back = shot(last, sBack, W / 2, (top + capTop) / 2, top, capTop);
+
+  // States: which elements each one flips, when, and the class each element has from then on.
+  const states = (data.states || []).map((st) => {
+    let els = [];
+    try { els = Array.from(R.querySelectorAll(st.match)); } catch (e) { els = []; }
+    const gap = els.length > 1 ? Math.min(0.22, 0.5 / (els.length - 1)) : 0;
+    return { ...st, els, gap };
+  });
+  const classes = new Map();
+  states.forEach((st) => st.els.forEach((el, j) => {
+    const before = classes.has(el) ? classes.get(el).at(-1).cls : el.getAttribute("class") || "";
+    const cls = (before.split(/\s+/).includes(st.set) ? before : (before + " " + st.set)).trim();
+    if (!classes.has(el)) classes.set(el, []);
+    classes.get(el).push({ t: st.at + j * st.gap, cls });
+  }));
+  const pops = (el) => (el.matches(".tick, [data-pop]") ? [el] : []).concat(Array.from(el.querySelectorAll(".tick, [data-pop]")));
+
+  // The zoom exit dives into the last focus box, or (HTML) the last state's first tick: the green-tick move. It is
+  // measured where it rests on screen at the end, with every state applied.
+  const body = q(".ui-body");
+  let target = null;
+  const lastState = states.filter((st) => st.els.length).at(-1);
+  if (lastState) {
+    const tick = pops(lastState.els[0])[0];
+    if (tick) {
+      const saved = Array.from(classes.keys()).map((el) => [el, el.getAttribute("class")]);
+      classes.forEach((list, el) => el.setAttribute("class", list.at(-1).cls));
+      const b = body.getBoundingClientRect(), t = tick.getBoundingClientRect();
+      const k = b.width / 1460;
+      saved.forEach(([el, c]) => (c === null ? el.removeAttribute("class") : el.setAttribute("class", c)));
+      if (t.width > 0 && k > 0) {
+        const lx = (t.left - b.left) / k, ly = (t.top - b.top) / k;
+        target = { x: wx + K * lx, y: wy + K * (BAR + ly), w: (K * t.width) / k, h: (K * t.height) / k };
+      }
+    }
+  }
+  const onScreen = (r) => ({ x: back.x + back.scale * r.x, y: back.y + back.scale * r.y, w: back.scale * r.w, h: back.scale * r.h });
+  let dive = target && onScreen(target);
+  const visible = (r) => r.x >= SAFE && r.x + r.w <= W - SAFE && r.y >= top && r.y + r.h <= capTop;
+  if (!dive || !visible(dive)) dive = onScreen(last);
+  const size = Math.min(240, Math.max(dive.w, dive.h));
+  Object.assign(q(".ui-target").style, { left: dive.x + dive.w / 2 - size / 2 + "px", top: dive.y + dive.h / 2 - size / 2 + "px", width: size + "px", height: size + "px" });
+
+  // ---------- motion ----------
+  const move = q(".ui-move");
+  const win = q(".ui-win");
+  // The grid settles and the window rises in, sharpening, with a slight overscale. When a transition brings the scene
+  // in, it already moves and blurs the content, so the window's own rise is shorter and lighter (they stack, and with
+  // motion blur on top the first frames would hold no readable shape at all).
+  const rise = D.in ? { y: 200 / K, scale: 1.04, filter: "blur(6px)" } : { y: 520 / K, scale: 1.08, filter: "blur(14px)" };
+  tl.fromTo(q(".ui-grid"), { y: 120 }, { y: 0, duration: 0.8, ease: "expo.out" }, 0)
+    .fromTo(win, rise, { y: 0, scale: 1, filter: "blur(0px)", duration: 0.55, ease: "expo.out" }, 0);
+  // The camera establishes the whole window, then pushes in to each box in turn; a chip names it.
+  let from = { x: 0, y: 0, scale: 1 };
+  shots.forEach((to, k) => {
+    tl.fromTo(move, from, { ...to, duration: 0.6, ease: "power2.inOut", immediateRender: false }, focusStarts[k]);
+    from = to;
+  });
+  const chipAt = (k) => chips.find((c) => Number(c.dataset.focus) === k);
+  data.focus.forEach((_, k) => {
+    const chip = chipAt(k);
+    if (!chip) return;
+    tl.fromTo(chip, { opacity: 0, y: -40, scale: 0.9 }, { opacity: 1, y: 0, scale: 1, duration: 0.42, ease: "back.out(1.6)" }, focusStarts[k] + 0.35);
+    // The previous chip leaves as the camera moves on.
+    const next = data.focus.findIndex((f, j) => j > k && chipAt(j));
+    if (next > k) tl.to(chip, { opacity: 0, y: -24, filter: "blur(8px)", duration: 0.18, ease: "power2.in" }, focusStarts[next]);
+  });
+  // Eases back for the caption, and is at rest well before the scene's exit.
+  const tBack = captionAt - 0.15;
+  tl.fromTo(move, from, { ...back, duration: Math.max(0.2, Math.min(0.7, REST - tBack)), ease: "power2.inOut", immediateRender: false }, tBack);
+
+  // The screen acts: classes flip and the change is animated. Opacity and position render their starting values up
+  // front: a tween that waits (immediateRender: false) rewinds to whatever it first saw, and that may be the flipped
+  // class's look. The blur is its own tween that only exists while the swap runs (a resting element with a filter is
+  // a layer of its own, which HyperFrames' motion-blur capture can paint as a grey box under an entrance blur).
+  classes.forEach((list, el) => list.forEach(({ t, cls }) => tl.set(el, { attr: { class: cls } }, t)));
+  states.forEach((st) => st.els.forEach((el, j) => {
+    const t = st.at + j * st.gap;
+    const was = Array.from(el.querySelectorAll(".was, [data-was]"));
+    const now = Array.from(el.querySelectorAll(".now, [data-now]"));
+    const pop = pops(el);
+    if (was.length) {
+      tl.fromTo(was, { opacity: 1, y: 0 }, { opacity: 0, y: -10, duration: 0.14, ease: "power2.in" }, t)
+        .fromTo(was, { filter: "blur(0px)" }, { filter: "blur(6px)", duration: 0.14, ease: "power2.in", immediateRender: false }, t)
+        .set(was, { filter: "none" }, t + 0.14);
+    }
+    if (now.length) {
+      tl.fromTo(now, { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.26, ease: "expo.out" }, t + 0.06)
+        .fromTo(now, { filter: "blur(6px)" }, { filter: "blur(0px)", duration: 0.26, ease: "expo.out", immediateRender: false }, t + 0.06)
+        .set(now, { filter: "none" }, t + 0.32);
+    }
+    if (pop.length) tl.fromTo(pop, { scale: 0 }, { scale: 1, duration: 0.34, ease: "back.out(2.2)" }, t + 0.06);
+  }));
+
+  // The caption blurs in word by word over a fade of the ground; its last two words take the accent.
+  if (cap) {
+    const ws = RR.words(cap);
+    ws.slice(-Math.min(2, ws.length - 1)).forEach((w) => { if (ws.length > 1) w.classList.add("acc"); });
+    tl.fromTo(q(".ui-fade"), { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "power1.out" }, captionAt - 0.15);
+    RR.blurIn(tl, ws, captionAt, { blur: 10, duration: 0.15, stagger: 0.09 });
+  }
+  S.done();
+})();
+</script>
+</template></body></html>

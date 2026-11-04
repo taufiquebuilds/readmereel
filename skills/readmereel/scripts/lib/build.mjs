@@ -3,8 +3,8 @@ import { closeSync, constants, copyFileSync, existsSync, fstatSync, lstatSync, m
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { planFilm } from "./plan.mjs";
-import { MAX_IMAGES, sanitizeScreen } from "./sanitize.mjs";
-import { toV2 } from "./story.mjs";
+import { MAX_IMAGES, sanitizeScreen, scopeCss } from "./sanitize.mjs";
+import { imageSize, toV2 } from "./story.mjs";
 
 // Film plan -> HyperFrames project: a root index.html that mounts one sub-composition per scene (overlapping by the
 // transition length) plus the sound cues, and one file per scene stamped from template/scenes/<type>.html.
@@ -158,10 +158,59 @@ export function prepareScreen(scene, id, { baseDir, projectDir, field = "html" }
 }
 
 const badge = (ctx) => (ctx.logo ? `<img src="${escapeHtml(ctx.logo)}" alt="">` : `<i class="glyph"></i>`);
-// A counter value as it lands: thousands separators, one decimal place only when the value has one.
+// A counter value as it lands, by the runtime's rule (RR.numText): thousands separators and at most one decimal place,
+// cut from String(value) and never rounded, so 99.95 reads "99.9" and never "100.0".
 export function counterText(value) {
-  const decimals = Number.isInteger(value) ? 0 : 1;
-  return Number(value).toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  const str = String(value);
+  const [int, frac = ""] = str.replace("-", "").split(".");
+  const d = Math.min(1, frac.length);
+  return (str.startsWith("-") ? "-" : "") + Number(int).toLocaleString("en-US") + (d ? "." + frac.slice(0, d) : "");
+}
+
+// ---------- ui ----------
+
+// The window body every ui screen is drawn in, in CSS px, in both layouts (tall scales the whole window).
+export const UI_BODY = { width: 1460, height: 806 };
+// Extra scene data a slot function hands back (merged into the scene's data; a symbol, so fill() never sees it).
+const EXTRA_DATA = Symbol("data");
+
+// The repo URL's host, for the window's address pill.
+const urlHost = (url) => String(url ?? "").replace(/^https?:\/\//i, "").split("/")[0];
+
+// A state's selector, scoped the way the screen's own CSS is (ids prefixed, inside .screen-<id>), so it can only ever
+// match inside the screen. One selector (a list is fine), no rules, at-rules or escapes.
+function stateMatch(selector, id, field) {
+  const why = `${field}: must be one CSS selector inside the screen, like .status or #row2`;
+  if (typeof selector !== "string" || !selector.trim() || /[{};@\\]/.test(selector)) throw new Error(why);
+  let scoped;
+  try { scoped = scopeCss(`${selector}{}`, `screen-${id}`); } catch { throw new Error(why); }
+  const m = /^([^{}]+)\{\}$/.exec(scoped);
+  if (!m) throw new Error(why);
+  return m[1];
+}
+
+function uiSlots(s, ctx) {
+  const f = `scenes[${s.index}]`;
+  const chips = (s.data.focus ?? [])
+    .map((fo, k) => (fo.label ? `<div class="ui-chip" data-focus="${k}"><i class="dot"></i><span data-field="${f}.focus[${k}].label">${escapeHtml(fo.label)}</span></div>` : ""))
+    .filter(Boolean)
+    .join("\n    ");
+  const caption = s.data.caption
+    ? `<div class="ui-capwrap"><div class="ui-fade" data-layout-allow-occlusion></div><div class="ui-caption" data-field="${f}.caption">${escapeHtml(s.data.caption)}</div></div>`
+    : "";
+  const slots = { HOST: escapeHtml(urlHost(ctx.url)), CHIPS: chips, CAPTION: caption, SHOT: "", SCREEN: "", SCREEN_STYLE: "" };
+  if (s.data.html) {
+    const screen = prepareScreen(s.data, s.id, { baseDir: ctx.baseDir, projectDir: ctx.projectDir, field: `${f}.html` });
+    const states = (s.data.states ?? []).map((st, k) => ({ ...st, match: stateMatch(st.selector, s.id, `${f}.states[${k}].selector`) }));
+    return { ...slots, SCREEN: screen.markup, SCREEN_STYLE: screen.style, [EXTRA_DATA]: { view: { ...UI_BODY, scale: 1, x: 0, y: 0 }, ...(s.data.states ? { states } : {}) } };
+  }
+  // Image mode: the copy is the checked bytes, and its size (read from that copy) maps focus boxes, given in the
+  // image's own pixels, to the body: contained (object-fit: contain) and centred.
+  const rel = copyImage(ctx.projectDir, ctx.baseDir, resolve(ctx.baseDir, s.data.image), `assets/screens/${s.id}${extname(s.data.image).toLowerCase()}`, `${f}.image`, s.data.image);
+  const [width, height] = imageSize(join(ctx.projectDir, rel), ctx.projectDir);
+  const scale = Math.min(UI_BODY.width / width, UI_BODY.height / height);
+  const view = { width, height, scale: num(scale), x: num((UI_BODY.width - width * scale) / 2), y: num((UI_BODY.height - height * scale) / 2) };
+  return { ...slots, SHOT: `<img class="ui-shot" src="${escapeHtml(rel)}" alt="">`, [EXTRA_DATA]: { view } };
 }
 
 // Scene-specific slots. Tasks adding scene types add their entry here.
@@ -204,11 +253,7 @@ const SLOTS = {
     URL: escapeHtml(s.data.url),
     LOGO: badge(ctx),
   }),
-  ui: (s, ctx) => {
-    if (!s.data.html) return {};
-    const screen = prepareScreen(s.data, s.id, { baseDir: ctx.baseDir, projectDir: ctx.projectDir, field: `scenes[${s.index}].html` });
-    return { SCREEN: screen.markup, SCREEN_STYLE: screen.style };
-  },
+  ui: uiSlots,
 };
 
 // Seconds of audio in a file, or null when ffprobe cannot read it.
@@ -256,11 +301,12 @@ export function buildProject(story, layout, { baseDir, outDir, plan, sfxDir, tem
   copyFileSync(join(templateDir, "hyperframes.json"), join(projectDir, "hyperframes.json"));
   const logo = story.logo ? copyImage(projectDir, baseDir, resolve(baseDir, story.logo), `assets/logo${extname(story.logo).toLowerCase()}`, "logo", story.logo) : "";
   const runtime = readFileSync(join(templateDir, "runtime.js"), "utf8");
-  const ctx = { baseDir, projectDir, logo };
+  const ctx = { baseDir, projectDir, logo, url: story.url };
 
   for (const s of plan.scenes) {
     const file = join(templateDir, "scenes", `${s.type}.html`);
     if (!existsSync(file)) throw new Error(`no template for scene type "${s.type}" (scenes[${s.index}])`);
+    const own = SLOTS[s.type]?.(s, ctx) ?? {};
     const slots = {
       ID: s.id,
       INDEX: s.index,
@@ -269,8 +315,8 @@ export function buildProject(story, layout, { baseDir, outDir, plan, sfxDir, tem
       LAYOUT: layout,
       STYLE: s.data.style ?? "midnight",
       RUNTIME: runtime,
-      ...(SLOTS[s.type]?.(s, ctx) ?? {}),
-      DATA: scriptJson(s),
+      ...own,
+      DATA: scriptJson(own[EXTRA_DATA] ? { ...s, data: { ...s.data, ...own[EXTRA_DATA] } } : s),
     };
     writeFileSync(join(projectDir, "compositions", `${s.id}-${s.type}.html`), fill(readFileSync(file, "utf8"), slots, `scenes/${s.type}.html`));
   }
