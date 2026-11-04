@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { hold, pickTransitions, planFilm, sceneLength, T } from "../skills/readmereel/scripts/lib/plan.mjs";
 import { validStory2 } from "./helpers.mjs";
 
+const FRAME = 1 / 30;
+
 test("hold follows the readability rule", () => {
   assert.equal(hold("Sent. By itself."), 0.5 + 0.3 * 3);
 });
@@ -12,7 +14,7 @@ test("film length is clamped to 15–35 s and scenes overlap by T", () => {
   assert.ok(p.duration >= 15 && p.duration <= 35, `duration ${p.duration}`);
   for (let i = 1; i < p.scenes.length; i++) {
     const prev = p.scenes[i - 1];
-    assert.ok(Math.abs(p.scenes[i].start - (prev.start + prev.duration - T)) < 1e-9);
+    assert.ok(Math.abs(p.scenes[i].start - (prev.start + prev.duration - T)) < FRAME + 1e-9);
   }
   const last = p.scenes.at(-1);
   assert.ok(Math.abs(last.start + last.duration - p.duration) < 1e-9);
@@ -93,4 +95,46 @@ test("cues follow transitions and actions", () => {
 test("sceneLength grows with text", () => {
   const story = validStory2();
   assert.ok(sceneLength({ type: "list", items: ["a b c d e f", "g", "h"] }, story) > sceneLength({ type: "list", items: ["a", "g", "h"] }, story));
+});
+
+// Every timing a film hands to HTML: scene starts and durations, film duration and cue times.
+function timings(p) {
+  return [...p.scenes.flatMap((s) => [s.start, s.duration]), p.duration, ...p.cues.map((c) => c.t)];
+}
+
+// 4 decimals cannot hold every 1/30 s frame exactly, so each value must sit within 0.0001 s of a whole frame
+// (the film duration is a sum of two such values, which can drift that far).
+function assertFrameClean(values) {
+  for (const v of values) {
+    assert.equal(Number(v.toFixed(4)), v, `${v} has more than 4 decimals`);
+    assert.ok(Math.abs(v - Math.round(v * 30) / 30) < 0.0001 + 1e-9, `${v} is not on a whole frame at 30 fps`);
+  }
+}
+
+test("every start, duration and cue time is a whole frame with at most 4 decimals", () => {
+  assertFrameClean(timings(planFilm(validStory2())));
+});
+
+test("a short story stretched to 15 s keeps the invariants and ends at 15 s or later", () => {
+  const s = validStory2();
+  // This install length makes rounding leave the stretched film just under 15 s, so the last scene must be bumped.
+  s.install = "npm i -g readmereel";
+  s.scenes = [
+    { type: "hook", lines: ["Hi"] },
+    { type: "title", promise: "Hi" },
+    { type: "list", items: ["Hi", "Hi", "Hi"] },
+    { type: "counter", items: [{ value: 1, label: "Hi" }] },
+    { type: "end" },
+  ];
+  const raw = s.scenes.reduce((a, sc) => a + sceneLength(sc, s), 0) - T * (s.scenes.length - 1);
+  assert.ok(raw < 15, `raw ${raw} must need the stretch path`);
+  const p = planFilm(s);
+  assert.ok(p.duration >= 15, `duration ${p.duration}`);
+  assertFrameClean(timings(p));
+  for (let i = 1; i < p.scenes.length; i++) {
+    const prev = p.scenes[i - 1];
+    assert.ok(Math.abs(p.scenes[i].start - (prev.start + prev.duration - T)) < FRAME + 1e-9);
+  }
+  const last = p.scenes.at(-1);
+  assert.ok(Math.abs(last.start + last.duration - p.duration) < 1e-9);
 });

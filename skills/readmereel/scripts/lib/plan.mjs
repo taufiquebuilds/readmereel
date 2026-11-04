@@ -8,6 +8,10 @@ const MIN_FILM = 15;
 const MAX_FILM = 35;
 const KINDS = ["whip", "zoom", "flood", "blur", "carry"];
 
+// Whole frames at 30 fps, then 4 decimals so float noise never reaches the HTML.
+const round4 = (v) => Number(v.toFixed(4));
+const frame = (x) => round4(Math.round(x * 30) / 30);
+
 const words = (s) => String(s ?? "").trim().split(/\s+/).filter(Boolean).length;
 export const hold = (s) => 0.5 + 0.3 * words(s);
 
@@ -220,12 +224,13 @@ export function planFilm(story) {
     if (type === "title" || type === "end") {
       Object.assign(data, { name: story.name, install: story.install, url: story.url, logo: story.logo, endCard: story.endCard });
     }
+    const len = frame(lengths[i]);
     planned.push({
       id: `s${i + 1}`,
       index: i,
       type,
       start,
-      duration: lengths[i],
+      duration: len,
       in: i === 0 ? null : kinds[i - 1],
       out: i === n - 1 ? null : kinds[i],
       ground: grounds[type],
@@ -233,15 +238,18 @@ export function planFilm(story) {
       beats: sceneBeats(scene, story),
       data,
     });
-    start += lengths[i] - T;
+    // Each start comes from the rounded previous scene, so rounding error never compounds.
+    start = frame(start + len - T);
   });
   const last = planned.at(-1);
-  const duration = last.start + last.duration;
+  // Rounding can leave a stretched film a frame short of the minimum: add frames to the last scene until it fits.
+  while (round4(last.start + last.duration) < MIN_FILM) last.duration = frame(last.duration + FRAME);
+  const duration = round4(last.start + last.duration);
 
   const cues = [];
   let whooshes = 0;
   for (const s of planned) {
-    const add = (t, sound) => cues.push({ t: s.start + t + FRAME, sound });
+    const add = (t, sound) => cues.push({ t: frame(s.start + t + FRAME), sound });
     if (["whip", "zoom", "carry"].includes(s.in)) add(0, whooshes++ % 2 === 0 ? "whoosh" : "whoosh-short");
     if (s.type === "ui") {
       s.beats.focusStarts.forEach((f) => add(f + 0.6, "click-soft"));
