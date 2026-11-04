@@ -1,0 +1,159 @@
+<!doctype html>
+<html><head><meta charset="UTF-8" /></head><body><template>
+<style>
+  /* Before and after on one stage: `before` underneath, `after` on top, revealed by a wipe (left to right in wide, top
+     to bottom in tall) with an accent edge riding it. Layers, back to front: the drafting grid (.ground), the stage
+     (.cmp-rise for the entrance, .cmp-push for the hold's lean-in about the after panel's centre), the before panel,
+     the after panel (the hero and zoom target; .cmp-reveal inside it is what the wipe clips), the wipe edge.
+     All of it sits in .cam, the runtime's zoom element, which opts out of HyperFrames' motion blur: a motion-blurred
+     dive is redrawn above the zoom dot (the dive blurs by a filter instead).
+     Each panel is an image (contained, on white) or points; its label chip sits in its own corner: before top right
+     (wide) or bottom left (tall), so it is wiped away; after top left, popping as the wipe passes 60%. */
+  #root { position: absolute; inset: 0; overflow: hidden; background: var(--ground); font-family: "Inter", sans-serif; }
+  #root[data-tone="light"] { --gridline: #d6dce3; --grid-alpha: 0.55; }
+  #root[data-tone="dark"] { --gridline: rgba(255, 255, 255, 0.14); --grid-alpha: 0.55; }
+  .cmp-grid { position: absolute; inset: -200px; opacity: var(--grid-alpha); pointer-events: none;
+    background-image: linear-gradient(var(--gridline) 1px, transparent 1px), linear-gradient(90deg, var(--gridline) 1px, transparent 1px);
+    background-size: 64px 64px; }
+  .cam, .cmp-stage, .cmp-rise, .cmp-push { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+  .cmp-panel { position: absolute; border-radius: 18px; overflow: hidden; background: #ffffff; }
+  .cmp-before { box-shadow: 0 50px 140px rgba(15, 23, 42, 0.28), 0 0 0 1px rgba(15, 23, 42, 0.08); }
+  .cmp-after { position: absolute; border-radius: 18px; }
+  .cmp-reveal { left: 0; top: 0; width: 100%; height: 100%; }
+  .cmp-shot { position: absolute; inset: 0; background: #ffffff; }
+  .cmp-img { display: block; width: 100%; height: 100%; object-fit: contain; }
+  /* Points: before reads muted on white, after on the ink card with accent ticks. */
+  /* One column as wide as the widest point, centred in the panel; points left-aligned in it. */
+  .cmp-points { position: absolute; inset: 0; display: grid; grid-template-columns: max-content; align-content: center; justify-content: center; row-gap: 40px; padding: 130px 120px; }
+  #root[data-layout="tall"] .cmp-points { padding: 150px 64px; row-gap: 48px; }
+  .cmp-point { display: flex; align-items: flex-start; gap: 0.5em; font-weight: 700; font-size: 56px; line-height: 1.16; letter-spacing: -0.02em; }
+  #root[data-layout="tall"] .cmp-point { font-size: 48px; }
+  .cmp-point span { text-wrap: balance; }
+  .cmp-mark { position: relative; flex: none; width: 0.72em; height: 0.72em; margin-top: 0.22em; border-radius: 50%; }
+  .cmp-before .cmp-point { color: #5b6470; }
+  .cmp-before .cmp-mark { border: 0.08em solid #a3aab5; box-sizing: border-box; }
+  .cmp-before .cmp-mark::before, .cmp-before .cmp-mark::after { content: ""; position: absolute; left: 50%; top: 50%; width: 0.36em; height: 0.08em; margin: -0.04em 0 0 -0.18em; background: #a3aab5; border-radius: 1px; transform: rotate(45deg); }
+  .cmp-before .cmp-mark::after { transform: rotate(-45deg); }
+  .cmp-reveal[data-mode="points"] { background: #111418; }
+  .cmp-reveal .cmp-point { color: #ffffff; }
+  .cmp-reveal .cmp-mark { background: var(--cmp-disc); }
+  .cmp-reveal .cmp-mark::after { content: ""; position: absolute; left: 0.25em; top: 0.13em; width: 0.17em; height: 0.34em; border: solid var(--cmp-tick); border-width: 0 0.08em 0.08em 0; transform: rotate(45deg); }
+  .cmp-chip { position: absolute; z-index: 2; font-weight: 700; font-size: 34px; line-height: 1.2; letter-spacing: -0.01em; padding: 14px 30px; border-radius: 999px; white-space: nowrap;
+    box-shadow: 0 16px 44px rgba(15, 23, 42, 0.22); }
+  .cmp-before .cmp-chip { top: 36px; right: 36px; background: #5b6470; color: #ffffff; }
+  #root[data-layout="tall"] .cmp-before .cmp-chip { top: auto; right: auto; bottom: 36px; left: 36px; }
+  .cmp-reveal .cmp-chip { top: 36px; left: 36px; background: var(--accent); color: var(--on-accent); }
+  .cmp-edge { position: absolute; z-index: 3; background: var(--accent-ink); box-shadow: 0 0 24px color-mix(in srgb, var(--accent) 60%, transparent); pointer-events: none; }
+  .cmp-knob { position: absolute; width: 56px; height: 56px; border-radius: 50%; background: #ffffff; border: 6px solid var(--accent-ink); box-sizing: border-box;
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.3); }
+  .cmp-knob::before, .cmp-knob::after { content: ""; position: absolute; top: 50%; width: 9px; height: 9px; margin-top: -5px; border: solid var(--accent-ink); border-width: 0 0 3px 3px; }
+  .cmp-knob::before { left: 9px; transform: rotate(45deg); }
+  .cmp-knob::after { right: 9px; transform: rotate(-135deg); }
+  #root[data-layout="tall"] .cmp-knob { transform: rotate(90deg); }
+</style>
+<div id="root" data-composition-id="__ID__" data-width="__W__" data-height="__H__" data-layout="__LAYOUT__" data-style="__STYLE__">
+  <div class="ground cmp-grid" aria-hidden="true" data-layout-ignore></div>
+  <div class="cam" data-motion-blur="off"><div class="cmp-stage"><div class="cmp-rise"><div class="cmp-push">
+    <div class="cmp-panel cmp-before" data-layout-allow-overlap>
+      __BEFORE__
+    </div>
+    <div class="cmp-after hero" data-zoom-target data-layout-allow-occlusion>
+      <div class="cmp-panel cmp-reveal" data-layout-allow-overlap>
+      __AFTER__
+      </div>
+    </div>
+    <div class="cmp-edge" aria-hidden="true" data-layout-ignore data-motion-blur="off"><i class="cmp-knob"></i></div>
+  </div></div></div></div>
+  <script type="application/json" class="scene-data">__DATA__</script>
+</div>
+<script>
+__RUNTIME__
+(() => {
+  const S = RR.scene("__ID__");
+  const { tl, R, D, q, qa, W, H, wide } = S;
+  const data = D.data;
+  const { wipeStart } = D.beats;
+  const end = D.duration;
+  const WIPE = 0.8;
+
+  // ---------- measure first ----------
+  // The panel, fitted inside the frame's action-safe box and centred: with an image, the image's shape (the after
+  // image's, else the before's); with points only, the full width. It is then as tall as its points need (each point
+  // at most two lines; padding leaves room for the chips), never shorter than the image shape or the minimum.
+  const box = wide ? { w: 1440, h: 860 } : { w: 1000, h: 1300 };
+  const minH = wide ? 560 : 720;
+  const sz = data.sides || {};
+  const shape = sz.after || sz.before;
+  let PW = box.w, PH = minH;
+  if (shape) {
+    const a = shape.width / shape.height;
+    PW = Math.round(Math.min(box.w, box.h * a));
+    PH = Math.round(Math.min(box.h, PW / a));
+  }
+  const before = q(".cmp-before"), after = q(".cmp-after"), reveal = q(".cmp-reveal");
+  [before, after].forEach((el) => Object.assign(el.style, { width: PW + "px", height: PH + "px" }));
+  reveal.setAttribute("data-mode", reveal.querySelector(".cmp-points") ? "points" : "image");
+  // On the ink card the ticks take the accent as it reads there.
+  const disc = RR.readable(data.accent, "#111418", 3);
+  R.style.setProperty("--cmp-disc", disc);
+  R.style.setProperty("--cmp-tick", RR.contrast("#111418", disc) > RR.contrast("#ffffff", disc) ? "#111418" : "#ffffff");
+  // Points: every point in both panels shares one size, the largest at which each takes at most two lines.
+  const pts = qa(".cmp-point span");
+  if (pts.length) {
+    const padX = wide ? 120 : 64, max = wide ? 56 : 48;
+    const w = PW - 2 * padX - Math.round(max * 1.22);
+    const size = Math.min(...pts.map((el) => RR.fitLines(el, max, w, 2)));
+    pts.forEach((el) => { el.parentElement.style.fontSize = size + "px"; el.style.fontSize = ""; el.style.width = ""; });
+    // The tallest points block (measured in flow) sets the panel's height.
+    const need = Math.max(...qa(".cmp-points").map((b) => {
+      b.style.position = "static";
+      const h = b.offsetHeight;
+      b.style.position = "";
+      return h;
+    }));
+    PH = Math.round(Math.min(box.h, Math.max(PH, need)));
+    [before, after].forEach((el) => { el.style.height = PH + "px"; });
+  }
+  const px = Math.round((W - PW) / 2), py = Math.round((H - PH) / 2);
+  [before, after].forEach((el) => Object.assign(el.style, { left: px + "px", top: py + "px" }));
+  // The wipe edge: a 6 px line across the panel's moving edge, with a knob at its middle.
+  const edge = q(".cmp-edge"), knob = q(".cmp-knob");
+  if (wide) Object.assign(edge.style, { left: px - 3 + "px", top: py + "px", width: "6px", height: PH + "px" });
+  else Object.assign(edge.style, { left: px + "px", top: py - 3 + "px", width: PW + "px", height: "6px" });
+  Object.assign(knob.style, wide ? { left: "-25px", top: PH / 2 - 28 + "px" } : { left: PW / 2 - 28 + "px", top: "-25px" });
+  // When the wipe passes 60% (power2.inOut, inverted).
+  const ease = gsap.parseEase("power2.inOut");
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2; if (ease(m) < 0.6) lo = m; else hi = m; }
+  const at60 = wipeStart + WIPE * lo;
+
+  // ---------- motion ----------
+  // The stage rises in, sharpening (lighter under an entrance transition), on a settling grid.
+  const rise = D.in ? { y: 160, scale: 1.04, filter: "blur(6px)" } : { y: 420, scale: 1.08, filter: "blur(14px)" };
+  tl.fromTo(q(".cmp-grid"), { y: 120 }, { y: 0, duration: 0.8, ease: "expo.out" }, 0)
+    .fromTo(q(".cmp-rise"), rise, { y: 0, scale: 1, filter: "blur(0px)", duration: 0.55, ease: "expo.out" }, 0)
+    .set(q(".cmp-rise"), { filter: "none" }, 0.56);
+  const chipIn = { opacity: 1, y: 0, scale: 1, duration: 0.42, ease: "back.out(1.6)" };
+  const [chipB, chipA] = [before.querySelector(".cmp-chip"), reveal.querySelector(".cmp-chip")];
+  tl.fromTo(chipB, { opacity: 0, y: -30, scale: 0.9 }, chipIn, 0.35);
+  // The wipe: after is clipped to nothing and opens towards the far edge; the accent edge rides it.
+  tl.fromTo(reveal, { clipPath: wide ? "inset(0% 100% 0% 0%)" : "inset(0% 0% 100% 0%)" }, { clipPath: "inset(0% 0% 0% 0%)", duration: WIPE, ease: "power2.inOut" }, wipeStart)
+    .fromTo(edge, { opacity: 0 }, { opacity: 1, duration: 0.12, ease: "power1.out" }, wipeStart - 0.08)
+    .fromTo(edge, wide ? { x: 0 } : { y: 0 }, { [wide ? "x" : "y"]: wide ? PW : PH, duration: WIPE, ease: "power2.inOut" }, wipeStart)
+    .to(edge, { opacity: 0, duration: 0.2, ease: "power1.in" }, wipeStart + WIPE);
+  tl.fromTo(chipA, { opacity: 0, y: -30, scale: 0.6 }, { ...chipIn, ease: "back.out(2)" }, at60);
+  // Once covered, the before panel goes and the after panel takes its shadow (the same shadow, so nothing changes on
+  // screen; the hero then carries its own shadow if it leaves by carry).
+  const shadow = "rgba(15, 23, 42, 0.28) 0px 50px 140px 0px, rgba(15, 23, 42, 0.08) 0px 0px 0px 1px";
+  tl.fromTo(after, { boxShadow: "rgba(15, 23, 42, 0) 0px 50px 140px 0px, rgba(15, 23, 42, 0) 0px 0px 0px 1px" }, { boxShadow: shadow, duration: 0.01, ease: "none" }, wipeStart + WIPE)
+    .fromTo(before, { opacity: 1 }, { opacity: 0, duration: 0.01, ease: "none" }, wipeStart + WIPE + 0.01);
+  // A slow lean in on the after panel while it holds, about its centre (the zoom's dive point), at rest by end - 0.45.
+  const hold0 = wipeStart + WIPE;
+  q(".cmp-push").style.transformOrigin = px + PW / 2 + "px " + (py + PH / 2) + "px";
+  tl.fromTo(q(".cmp-push"), { scale: 1 }, { scale: 1.03, duration: Math.max(0.1, end - 0.45 - hold0), ease: "power1.out" }, hold0);
+  // Before a zoom exit the label leaves (end - 0.45 over 0.15 s).
+  if (D.out === "zoom") tl.to(chipA, { opacity: 0, filter: "blur(8px)", duration: 0.15, ease: "power2.in" }, end - 0.45);
+  S.done();
+})();
+</script>
+</template></body></html>

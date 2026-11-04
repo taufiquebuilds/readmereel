@@ -273,6 +273,40 @@ function uiSlots(s, ctx) {
   return { ...slots, SHOT: `<img class="ui-shot" src="${escapeHtml(rel)}" alt="">`, [EXTRA_DATA]: { view } };
 }
 
+// ---------- terminal and compare ----------
+
+// The terminal's output: one pre-formatted line per output line (UI text for the gate); highlighted lines carry the
+// accent background and bar the template pops in.
+function terminalSlots(s, ctx) {
+  const f = `scenes[${s.index}]`;
+  const hl = new Set(s.data.highlight ?? []);
+  const lines = (s.data.output ?? []).map((line, k) => (hl.has(k)
+    ? `<div class="term-line hl" data-field="${f}.output[${k}]" data-ui-text><i class="term-bg"></i><i class="term-bar"></i><span class="term-text">${escapeHtml(line)}</span></div>`
+    : `<div class="term-line" data-field="${f}.output[${k}]" data-ui-text><span class="term-text">${escapeHtml(line)}</span></div>`));
+  return { NAME: escapeHtml(ctx.name), COMMAND: escapeHtml(s.data.command), LINES: lines.join("\n        ") };
+}
+
+// One side of a compare: its content (an image copied through the safe path, or points) and its label chip. Returns
+// the markup and, for an image, its size (read from the copy).
+function compareSide(s, side, ctx) {
+  const f = `scenes[${s.index}].${side}`;
+  const d = s.data[side] ?? {};
+  const chip = `<div class="cmp-chip" data-field="${f}.label">${escapeHtml(d.label)}</div>`;
+  if (d.image) {
+    const rel = copyImage(ctx.projectDir, ctx.baseDir, resolve(ctx.baseDir, d.image), `assets/compare/${s.id}-${side}${extname(d.image).toLowerCase()}`, `${f}.image`, d.image);
+    const [width, height] = imageSize(join(ctx.projectDir, rel), ctx.projectDir);
+    return { markup: `<div class="cmp-content cmp-shot"><img class="cmp-img" src="${escapeHtml(rel)}" alt=""></div>\n      ${chip}`, size: { width, height } };
+  }
+  const points = (d.points ?? []).map((p, k) => `<div class="cmp-point"><i class="cmp-mark"></i><span data-field="${f}.points[${k}]">${escapeHtml(p)}</span></div>`);
+  return { markup: `<div class="cmp-content cmp-points">${points.join("")}</div>\n      ${chip}`, size: null };
+}
+
+function compareSlots(s, ctx) {
+  const before = compareSide(s, "before", ctx);
+  const after = compareSide(s, "after", ctx);
+  return { BEFORE: before.markup, AFTER: after.markup, [EXTRA_DATA]: { sides: { before: before.size, after: after.size } } };
+}
+
 // Scene-specific slots. Tasks adding scene types add their entry here.
 const SLOTS = {
   hook: (s) => ({
@@ -314,6 +348,8 @@ const SLOTS = {
     LOGO: badge(ctx),
   }),
   ui: uiSlots,
+  terminal: terminalSlots,
+  compare: compareSlots,
 };
 
 // Seconds of audio in a file, or null when ffprobe cannot read it.
@@ -361,7 +397,7 @@ export function buildProject(story, layout, { baseDir, outDir, plan, sfxDir, tem
   copyFileSync(join(templateDir, "hyperframes.json"), join(projectDir, "hyperframes.json"));
   const logo = story.logo ? copyImage(projectDir, baseDir, resolve(baseDir, story.logo), `assets/logo${extname(story.logo).toLowerCase()}`, "logo", story.logo) : "";
   const runtime = readFileSync(join(templateDir, "runtime.js"), "utf8");
-  const ctx = { baseDir, projectDir, logo, url: story.url };
+  const ctx = { baseDir, projectDir, logo, url: story.url, name: story.name };
 
   for (const s of plan.scenes) {
     const file = join(templateDir, "scenes", `${s.type}.html`);

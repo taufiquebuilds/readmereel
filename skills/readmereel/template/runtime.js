@@ -156,6 +156,21 @@ var RR = (function () {
     return { x, y };
   }
 
+  // ---------- terminal push (pure geometry) ----------
+  // The terminal camera's push towards its focus line: scale up to 1.15 about the text block's centre (across) and the
+  // line's centre (down), never so far that the text block leaves the 40 px side margins; the block moves half way
+  // towards the frame's centre across, the line half way towards it down (at most 180 px). Rects in frame px at identity.
+  function termPush(W, H, block, line, max) {
+    const SAFE = 40;
+    const scale = Math.min(max || 1.15, (W - 2 * SAFE) / Math.max(1, block.w));
+    const ox = block.x + block.w / 2, oy = line.y + line.h / 2;
+    const half = (scale * block.w) / 2;
+    const lo = SAFE - ox + half, hi = W - SAFE - ox - half;
+    const tx = Math.min(Math.max((W / 2 - ox) * 0.5, lo), Math.max(lo, hi));
+    const ty = Math.max(-180, Math.min(180, (H / 2 - oy) * 0.5));
+    return { scale, ox, oy, tx, ty };
+  }
+
   // ---------- ui camera (pure geometry: no DOM, so it is unit-tested) ----------
   // Frame px at identity; a shot is { x, y, scale }: translate then scale about the frame's top-left.
   const cam = (() => {
@@ -407,5 +422,5 @@ var RR = (function () {
       default: break; // flood, or the last scene: hold
     }
   }
-  return { T, scene, words, blurIn, roll, rollFrom, decimals, numText, fit, fitLines, type, centre, readable, contrast, cam };
+  return { T, scene, words, blurIn, roll, rollFrom, decimals, numText, fit, fitLines, type, centre, readable, contrast, cam, termPush };
 })();

@@ -688,3 +688,112 @@ test("animated SVG is found through CSS escapes, entities and comments, and inli
   const entity = screenBase({ "screens/home.html": `<img src="data:image/gif;base64,&#x${b64.charCodeAt(0).toString(16)};${b64.slice(1)}">` });
   assert.throws(() => prep(entity), /an inline data image/);
 });
+
+// ---------- terminal and compare (Task 7) ----------
+
+function termStory() {
+  const story = validStory2();
+  story.name = "repo & <co>";
+  story.scenes[2] = { type: "terminal", command: "repoheat dashboard --user <me> && echo $&", output: ["Fetching events…", "  indented <b>", "Top day: Tue & Wed", "done"], highlight: [2, 0, 2] };
+  return story;
+}
+
+test("terminal: command, output lines and the window's name are filled, escaped and mapped to their fields", () => {
+  for (const layout of ["wide", "tall"]) {
+    const html = sceneFile(termStory(), layout, "s3", "terminal");
+    assert.ok(html.includes('<span class="term-cmd" data-field="scenes[2].command">repoheat dashboard --user &lt;me&gt; &amp;&amp; echo $&amp;</span>'), "command");
+    assert.ok(html.includes('<span class="term-name" data-ui-text data-layout-ignore>repo &amp; &lt;co&gt;</span>'), "name in the title bar");
+    const lines = html.match(/<div class="term-line[^"]*" data-field="scenes\[2\]\.output\[\d+\]" data-ui-text>/g) ?? [];
+    assert.equal(lines.length, 4, "one line per output line, marked as UI text");
+    // Leading spaces are kept (the line is pre-formatted), the text is escaped.
+    assert.ok(html.includes('data-field="scenes[2].output[1]" data-ui-text><span class="term-text">  indented &lt;b&gt;</span></div>'), "indent kept");
+    assert.ok(!/__[A-Z][A-Z0-9_]*__/.test(html), "no placeholders left");
+    assert.equal(sceneData(html).data.command, "repoheat dashboard --user <me> && echo $&");
+  }
+});
+
+test("terminal: highlighted lines (each once) get the accent bar and background; the card is the hero", () => {
+  const html = sceneFile(termStory(), "wide", "s3", "terminal");
+  const hl = html.match(/<div class="term-line hl" data-field="scenes\[2\]\.output\[(\d+)\]"/g) ?? [];
+  assert.deepEqual(hl.map((h) => h.match(/output\[(\d+)\]/)[1]), ["0", "2"]);
+  assert.ok(html.includes('<div class="term-line hl" data-field="scenes[2].output[2]" data-ui-text><i class="term-bg"></i><i class="term-bar"></i><span class="term-text">Top day: Tue &amp; Wed</span></div>'));
+  assert.ok(html.includes('<div class="term-line" data-field="scenes[2].output[3]" data-ui-text><span class="term-text">done</span></div>'));
+  assert.match(html, /<div class="term hero"/);
+  assert.match(html, /class="term-target" data-zoom-target/);
+  // Without highlight no line is marked.
+  const plain = termStory();
+  delete plain.scenes[2].highlight;
+  assert.ok(!sceneFile(plain, "wide", "s3", "terminal").includes('class="term-line hl"'));
+});
+
+// A story with a compare (scenes[2]); before and after as given, files in a fresh folder.
+function cmpStory(before, after, files = {}) {
+  const base = tmpDir();
+  mkdirSync(join(base, "shots"));
+  for (const [rel, body] of Object.entries(files)) writeFileSync(join(base, rel), body);
+  const story = validStory2();
+  story.scenes[2] = { type: "compare", before, after };
+  return { story, base };
+}
+
+test("compare, images: both images are copied, shown contained in their panels, and their sizes reach the scene data", () => {
+  const { story, base } = cmpStory({ label: "Without <it>", image: "shots/a.png" }, { label: "With nopurple & co", image: "shots/b.png" },
+    { "shots/a.png": pngOf(1600, 1000), "shots/b.png": pngOf(1200, 1000) });
+  for (const layout of ["wide", "tall"]) {
+    const dir = buildProject(story, layout, { baseDir: base, outDir: tmpDir(), plan: planFilm(story) });
+    const html = readFileSync(join(dir, "compositions/s3-compare.html"), "utf8");
+    assert.deepEqual(readFileSync(join(dir, "assets/compare/s3-before.png")), pngOf(1600, 1000));
+    assert.deepEqual(readFileSync(join(dir, "assets/compare/s3-after.png")), pngOf(1200, 1000));
+    assert.ok(html.includes('<img class="cmp-img" src="assets/compare/s3-before.png" alt="">'));
+    assert.ok(html.includes('<img class="cmp-img" src="assets/compare/s3-after.png" alt="">'));
+    assert.ok(html.includes('<div class="cmp-chip" data-field="scenes[2].before.label">Without &lt;it&gt;</div>'), "before label");
+    assert.ok(html.includes('<div class="cmp-chip" data-field="scenes[2].after.label">With nopurple &amp; co</div>'), "after label");
+    assert.deepEqual(sceneData(html).data.sides, { before: { width: 1600, height: 1000 }, after: { width: 1200, height: 1000 } });
+    assert.match(html, /<div class="cmp-after hero" data-zoom-target/);
+    assert.ok(!/__[A-Z][A-Z0-9_]*__/.test(html), "no placeholders left");
+  }
+});
+
+test("compare, points: each point is filled, escaped and mapped; a side may mix with an image", () => {
+  const { story, base } = cmpStory({ label: "Before", points: ["Purple <gradients>", "Same $& layout"] }, { label: "After", image: "shots/b.png" }, { "shots/b.png": pngOf(800, 600) });
+  const dir = buildProject(story, "tall", { baseDir: base, outDir: tmpDir(), plan: planFilm(story) });
+  const html = readFileSync(join(dir, "compositions/s3-compare.html"), "utf8");
+  assert.ok(html.includes('<div class="cmp-point"><i class="cmp-mark"></i><span data-field="scenes[2].before.points[0]">Purple &lt;gradients&gt;</span></div>'));
+  assert.ok(html.includes('data-field="scenes[2].before.points[1]">Same $&amp; layout</span>'));
+  assert.ok(html.includes('src="assets/compare/s3-after.png"'));
+  assert.deepEqual(sceneData(html).data.sides, { before: null, after: { width: 800, height: 600 } });
+  assert.ok(!existsSync(join(dir, "assets/compare/s3-before.png")));
+});
+
+test("compare: an image goes through the safe copy (symlink, fake or animated image refused, naming the field)", () => {
+  const outside = tmpDir();
+  writeFileSync(join(outside, "secret.png"), pngOf(10, 10));
+  const fake = cmpStory({ label: "A", image: "shots/a.png" }, { label: "B", points: ["x"] }, { "shots/a.png": "<html>" });
+  assert.throws(() => buildProject(fake.story, "wide", { baseDir: fake.base, outDir: tmpDir(), plan: planFilm(fake.story) }),
+    /^Error: scenes\[2\]\.before\.image: image is not a PNG file: shots\/a\.png$/);
+  const link = cmpStory({ label: "A", points: ["x"] }, { label: "B", image: "shots/b.png" });
+  symlinkSync(join(outside, "secret.png"), join(link.base, "shots/b.png"));
+  assert.throws(() => buildProject(link.story, "wide", { baseDir: link.base, outDir: tmpDir(), plan: planFilm(link.story) }),
+    /^Error: scenes\[2\]\.after\.image: image is a symbolic link: shots\/b\.png$/);
+  const anim = cmpStory({ label: "A", image: "shots/a.gif" }, { label: "B", points: ["x"] }, { "shots/a.gif": gifOf(2) });
+  assert.throws(() => buildProject(anim.story, "wide", { baseDir: anim.base, outDir: tmpDir(), plan: planFilm(anim.story) }),
+    /^Error: scenes\[2\]\.before\.image: image is animated/);
+});
+
+test("terminal and compare scene files follow the contract (compare adds only sides to the plan's data)", () => {
+  const { story, base } = cmpStory({ label: "A", points: ["x"] }, { label: "B", points: ["y"] });
+  story.scenes.splice(3, 0, { type: "terminal", command: "ls", output: ["a"] });
+  const plan = planFilm(story);
+  const dir = buildProject(story, "tall", { baseDir: base, outDir: tmpDir(), plan });
+  for (const s of plan.scenes.filter((x) => ["terminal", "compare"].includes(x.type))) {
+    const html = readFileSync(join(dir, `compositions/${s.id}-${s.type}.html`), "utf8");
+    assert.ok(html.includes(`<div id="root" data-composition-id="${s.id}" data-width="1080" data-height="1920" data-layout="tall" data-style="midnight">`));
+    assert.ok(html.includes(`RR.scene("${s.id}")`) && html.includes("var RR = (function () {"));
+    assert.ok(!/#root\.|\.(wide|tall|style-\w+)\b/.test(html.slice(html.indexOf("<style>"), html.indexOf("</style>"))));
+    const data = sceneData(html);
+    const { sides, ...rest } = data.data;
+    assert.deepEqual({ ...data, data: rest }, JSON.parse(JSON.stringify(s)));
+    if (s.type === "compare") assert.deepEqual(sides, { before: null, after: null });
+    else assert.equal(sides, undefined);
+  }
+});

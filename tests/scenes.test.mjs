@@ -225,3 +225,55 @@ test("zoom dive: the camera blurs as it dives (motion blur stays off), the dive 
   assert.match(runtime, /const far = Math\.max\(Math\.hypot\(cx, cy\), Math\.hypot\(W - cx, cy\), Math\.hypot\(cx, H - cy\), Math\.hypot\(W - cx, H - cy\)\)/);
   assert.match(runtime, /scale: \(far \/ r\) \* 1\.02, duration: 0\.21, ease: "power3\.in", immediateRender: false \}, end - 0\.3\)/);
 });
+
+// ---------- terminal and compare (Task 7) ----------
+
+test("terminal push: 1.15 about the focus line, the text block kept inside the 40 px margins, the line lifted towards the middle", () => {
+  // Wide: an 1150 px block fits at 1.15.
+  const wide = RR.termPush(1920, 1080, { x: 266, y: 260, w: 1150, h: 560 }, { x: 210, y: 480, w: 1500, h: 42 });
+  assert.equal(wide.scale, 1.15);
+  assert.equal(wide.oy, 501);
+  assert.ok(wide.ty > 0 && wide.ty <= 180, "lifted down towards the middle");
+  const on = (p, x) => p.ox + p.tx + p.scale * (x - p.ox);
+  assert.ok(on(wide, 266) >= 40 - 1e-9 && on(wide, 266 + 1150) <= 1880 + 1e-9);
+  // Tall: a 900 px block cannot take 1.15 inside 1000 px; the scale gives way, never the margins.
+  const tall = RR.termPush(1080, 1920, { x: 90, y: 700, w: 900, h: 700 }, { x: 50, y: 900, w: 980, h: 36 });
+  assert.ok(Math.abs(tall.scale - 1000 / 900) < 1e-9);
+  assert.ok(on(tall, 90) >= 40 - 1e-6 && on(tall, 990) <= 1040 + 1e-6);
+  // A short block keeps 1.15 and moves part of the way towards the centre, staying in the margins.
+  const short = RR.termPush(1080, 1920, { x: 90, y: 700, w: 400, h: 300 }, { x: 50, y: 760, w: 980, h: 36 });
+  assert.equal(short.scale, 1.15);
+  assert.ok(short.tx > 0 && on(short, 90) >= 40 - 1e-9);
+  // The lift is capped.
+  assert.equal(RR.termPush(1080, 1920, { x: 90, y: 100, w: 400, h: 50 }, { x: 50, y: 100, w: 980, h: 36 }).ty, 180);
+});
+
+test("terminal: output lines are UI text, the camera layer opts out of motion blur, the push is at rest by end - 0.45", () => {
+  const term = scene("terminal.html");
+  assert.match(term, /<div class="term-move" data-layout-allow-overflow data-motion-blur="off">/);
+  // The zoom element opts out of motion blur too: a motion-blurred dive is redrawn above the runtime's zoom dot.
+  assert.match(term, /<div class="cam" data-motion-blur="off">/);
+  assert.match(term, /<div class="term hero">/);
+  assert.match(term, /class="ground term-glow" aria-hidden="true" data-layout-ignore/);
+  assert.match(term, /class="ground term-dots" aria-hidden="true" data-layout-ignore/);
+  assert.match(term, /const pushAt = Math\.max\(0\.6, Math\.min\(Math\.max\(outDone \+ 0\.05, popped\), end - 0\.45 - 0\.6\)\)/);
+  assert.match(term, /duration: Math\.min\(0\.6, end - 0\.45 - pushAt\), ease: "power2\.inOut"/);
+  assert.match(term, /RR\.type\(tl, cmd, typeStart, 0\.05\)/);
+  assert.match(term, /outputStart \+ 0\.075 \* i/);
+  // The dot grid stays at 9% ink.
+  assert.match(term, /--dots: rgba\(255, 255, 255, 0\.09\)/);
+});
+
+test("compare: the wipe clips the after panel (inset, 0.8 s power2.inOut), the edge rides it crisp, the lean-in is at rest by end - 0.45", () => {
+  const cmp = scene("compare.html");
+  assert.match(cmp, /clipPath: wide \? "inset\(0% 100% 0% 0%\)" : "inset\(0% 0% 100% 0%\)" \}, \{ clipPath: "inset\(0% 0% 0% 0%\)", duration: WIPE, ease: "power2\.inOut" \}, wipeStart\)/);
+  assert.match(cmp, /const WIPE = 0\.8;/);
+  assert.match(cmp, /<div class="cmp-edge" aria-hidden="true" data-layout-ignore data-motion-blur="off">/);
+  assert.match(cmp, /<div class="cmp-after hero" data-zoom-target data-layout-allow-occlusion>/);
+  assert.match(cmp, /<div class="cam" data-motion-blur="off"><div class="cmp-stage">/);
+  assert.match(cmp, /class="ground cmp-grid" aria-hidden="true" data-layout-ignore/);
+  assert.match(cmp, /duration: Math\.max\(0\.1, end - 0\.45 - hold0\), ease: "power1\.out" \}, hold0\)/);
+  assert.match(cmp, /if \(D\.out === "zoom"\) tl\.to\(chipA, \{ opacity: 0, filter: "blur\(8px\)", duration: 0\.15, ease: "power2\.in" \}, end - 0\.45\)/);
+  // The after label pops when the wipe passes 60%.
+  assert.match(cmp, /if \(ease\(m\) < 0\.6\) lo = m; else hi = m;/);
+});
