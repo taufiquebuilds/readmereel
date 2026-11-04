@@ -7,7 +7,9 @@
 [![CI](https://github.com/taufiquebuilds/readmereel/actions/workflows/ci.yml/badge.svg)](https://github.com/taufiquebuilds/readmereel/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-![A 25-second launch video for agencyrecap: the problem, the name, three features with real screenshots, then the install command and a Star on GitHub button](examples/agencyrecap/video.gif)
+![readmereel's own launch video, made with readmereel: the problem, the name, three features, then the install command and a Star on GitHub button](examples/readmereel/video.gif)
+
+*This video was made by readmereel from this README. [Watch the MP4s](https://github.com/taufiquebuilds/readmereel/releases/latest).*
 
 </div>
 
@@ -28,14 +30,14 @@ For Codex, Cursor and other agents that support skills, copy `skills/readmereel`
 
 ## Examples
 
-Four real repos.
+Launch videos for four real repos, each made from that repo's README and any screenshots. They play right here; the full-quality 16:9 and 9:16 MP4s are on the [latest release](https://github.com/taufiquebuilds/readmereel/releases/latest).
 
 | | |
 | --- | --- |
-| [![agencyrecap launch video](examples/agencyrecap/poster.png)](https://github.com/taufiquebuilds/agencyrecap) | [![nopurple launch video](examples/nopurple/poster.png)](https://github.com/taufiquebuilds/nopurple) |
-| [![repoheat launch video](examples/repoheat/poster.png)](https://github.com/taufiquebuilds/repoheat) | [![launchday launch video](examples/launchday/poster.png)](https://github.com/taufiquebuilds/launchday) |
+| **[agencyrecap](https://github.com/taufiquebuilds/agencyrecap)**<br>![agencyrecap launch video](examples/agencyrecap/video.gif) | **[nopurple](https://github.com/taufiquebuilds/nopurple)**<br>![nopurple launch video](examples/nopurple/video.gif) |
+| **[repoheat](https://github.com/taufiquebuilds/repoheat)**<br>![repoheat launch video](examples/repoheat/video.gif) | **[launchday](https://github.com/taufiquebuilds/launchday)**<br>![launchday launch video](examples/launchday/video.gif) |
 
-Each video was made from the repo's README and any screenshots. Each folder in [`examples/`](examples) has the `story.json` and the screenshots it was made from, plus the GIF. The MP4s are on the [latest release](https://github.com/taufiquebuilds/readmereel/releases/latest).
+Each folder in [`examples/`](examples) has the `story.json` and the screenshots the video was made from. [`examples/readmereel`](examples/readmereel) is the video at the top of this page.
 
 ## What you get
 

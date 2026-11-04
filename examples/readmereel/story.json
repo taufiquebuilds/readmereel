@@ -1,0 +1,25 @@
+{
+  "name": "readmereel",
+  "problem": "Good repos get ignored because nobody reads a README",
+  "promise": "Turn your README into a launch video",
+  "features": [
+    {
+      "title": "Two sizes and a GIF, one run",
+      "detail": "16:9 for your README and launch posts, 9:16 for X, LinkedIn and Reels",
+      "image": "examples/readmereel/both-sizes.png"
+    },
+    {
+      "title": "Built from your real screenshots",
+      "detail": "Your agent writes the words and never makes up an image",
+      "image": "examples/nopurple/poster.png"
+    },
+    {
+      "title": "Free and local",
+      "detail": "Renders on your machine with HyperFrames, no API keys and no AI video model"
+    }
+  ],
+  "install": "/plugin install readmereel@readmereel",
+  "url": "github.com/taufiquebuilds/readmereel",
+  "stars": null,
+  "accent": "#f97316"
+}
