@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.15.0/dist/gsap.min.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: #08090b; }
+      #root { width: 100%; height: 100%; position: relative; overflow: hidden; font-family: "Inter", sans-serif;
+        --ink: #f5f6f8; --accent: #2dd4bf; --green: #1f7a4d; }
+      .scene { position: absolute; inset: 0; overflow: hidden; }
+
+      /* ---------- 1 Hook: dark, kinetic type ---------- */
+      #s1 { background: #08090b; display: flex; align-items: center; justify-content: center; }
+      .hook { position: absolute; font-weight: 900; color: var(--ink); letter-spacing: -0.045em; line-height: 1;
+        white-space: nowrap; text-align: center; }
+      .hook .w { display: inline-block; }
+      #h1, #h2 { font-size: 260px; }
+      #h3 { font-size: 168px; }
+      #h3 .acc { color: var(--accent); }
+      .num { font-variant-numeric: tabular-nums; display: inline-block; min-width: 2.2ch; text-align: right; }
+
+      /* ---------- 2 Product: the real agencyrecap dashboard ---------- */
+      #s2 { background: #e9edf1; }
+      #s2 .grid { position: absolute; inset: -200px; opacity: 0.55;
+        background-image: linear-gradient(#d6dce3 1px, transparent 1px), linear-gradient(90deg, #d6dce3 1px, transparent 1px);
+        background-size: 64px 64px; }
+      #cam { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
+      #win { position: absolute; left: 230px; top: 150px; width: 1460px; height: 860px; background: #fafafa;
+        border-radius: 22px; overflow: hidden; box-shadow: 0 50px 140px rgba(15, 23, 42, 0.28), 0 0 0 1px rgba(15,23,42,0.08);
+        color: #16181d; font-family: "Inter", sans-serif; }
+      #win .chrome { height: 54px; background: #fff; border-bottom: 1px solid #e5e7eb; display: flex; align-items: center; gap: 12px; padding: 0 22px; }
+      #win .chrome i { width: 14px; height: 14px; border-radius: 50%; background: #d1d5db; display: block; }
+      #win .chrome .url { margin-left: 24px; font-size: 18px; color: #6b7280; background: #f3f4f6; padding: 6px 18px; border-radius: 999px; }
+      #win nav { display: flex; gap: 30px; align-items: center; padding: 18px 36px; background: #fff; border-bottom: 1px solid #e5e7eb; font-weight: 600; font-size: 22px; }
+      #win nav .grow { flex: 1; }
+      #win nav .btn { font-weight: 500; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 16px; font-size: 20px; }
+      #win main { padding: 30px 120px; }
+      #win h1 { font-size: 46px; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 22px; }
+      #win table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e5e7eb; font-size: 22px; }
+      #win th, #win td { text-align: left; padding: 18px 20px; border-bottom: 1px solid #e5e7eb; vertical-align: top; }
+      #win th { font-size: 21px; }
+      #win .hint { color: #6b7280; font-size: 18px; }
+      #win .pill { font-size: 19px; border: 1px solid #e5e7eb; border-radius: 8px; padding: 6px 12px; display: inline-block; }
+      .status { position: relative; height: 34px; width: 320px; }
+      .status .was, .status .now { position: absolute; left: 0; top: 0; white-space: nowrap; }
+      .status .was { color: #16181d; }
+      .status .now { color: var(--green); font-weight: 600; display: flex; align-items: center; gap: 10px; opacity: 0; }
+      .status .tick { position: relative; z-index: 5; width: 26px; height: 26px; border-radius: 50%; background: var(--green); color: #fff; display: grid; place-items: center; font-size: 17px; }
+      #chip { position: absolute; right: 90px; top: 34px; display: flex; align-items: center; gap: 18px; background: #0b0d10; color: #fff;
+        border-radius: 999px; padding: 18px 34px; font-weight: 700; font-size: 40px; letter-spacing: -0.01em; box-shadow: 0 20px 60px rgba(0,0,0,0.25); }
+      #chip .dot { width: 18px; height: 18px; border-radius: 50%; background: var(--accent); }
+      #cap { position: absolute; left: 0; right: 0; bottom: 70px; text-align: center; font-weight: 900; font-size: 110px;
+        letter-spacing: -0.04em; color: #0b0d10; }
+      #cap .w { display: inline-block; }
+      #cap .acc { color: var(--green); }
+      #flood { position: absolute; left: 0; top: 0; width: 60px; height: 60px; border-radius: 50%; background: var(--green); opacity: 0; }
+
+      /* ---------- 3 Report: the PDF page performing ---------- */
+      #s3 { background: var(--green); }
+      #s3 .glow { position: absolute; inset: 0; background: radial-gradient(900px 700px at 70% 40%, rgba(255,255,255,0.18), transparent 70%); }
+      #r-title { position: absolute; left: 140px; top: 300px; color: #fff; font-weight: 900; font-size: 120px; line-height: 1.02; letter-spacing: -0.045em; }
+      #r-title .w { display: inline-block; }
+      #r-sub { position: absolute; left: 146px; top: 590px; color: rgba(255,255,255,0.82); font-size: 40px; font-weight: 500; }
+      #page { position: absolute; left: 1040px; top: 70px; width: 720px; height: 940px; background: #fff; border-radius: 10px;
+        box-shadow: 0 60px 160px rgba(0,0,0,0.35); padding: 56px 56px; color: #111; transform-origin: 50% 50%; }
+      #page .head { display: flex; align-items: center; justify-content: space-between; border-bottom: 3px solid var(--green); padding-bottom: 18px; }
+      #page .logo { display: flex; align-items: center; gap: 12px; font-weight: 800; font-size: 28px; }
+      #page .logo b { width: 34px; height: 34px; border-radius: 50%; background: var(--green); display: grid; place-items: center; color: #fff; font-size: 20px; }
+      #page h2 { font-size: 46px; font-weight: 800; letter-spacing: -0.02em; margin-top: 34px; }
+      #page .m { color: #6b7280; font-size: 28px; margin-top: 6px; }
+      .stat { border-left: 7px solid var(--green); padding-left: 22px; margin-top: 40px; }
+      .stat .k { font-size: 24px; font-weight: 800; letter-spacing: 0.16em; color: #6b7280; }
+      .stat .v { font-size: 76px; font-weight: 900; letter-spacing: -0.03em; line-height: 1.05; font-variant-numeric: tabular-nums; }
+      .stat .d { font-size: 28px; color: #111; }
+      .stat .d em { font-style: normal; color: var(--green); font-weight: 700; }
+
+      /* ---------- 4 End card ---------- */
+      #s4 { background: #08090b; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+      #mark { display: flex; align-items: center; gap: 34px; }
+      #mark .badge { width: 132px; height: 132px; border-radius: 34px; background: var(--accent); display: grid; place-items: center; }
+      #mark .badge i { width: 64px; height: 76px; background: #08090b; border-radius: 8px; display: block;
+        clip-path: polygon(0 0, 70% 0, 100% 22%, 100% 100%, 0 100%); }
+      #word { font-weight: 900; font-size: 168px; letter-spacing: -0.05em; color: var(--ink); }
+      #word span { display: inline-block; }
+      #tag { font-size: 44px; color: #a3aab5; margin-top: 30px; font-weight: 500; }
+      #cta { margin-top: 56px; font-family: "JetBrains Mono", monospace; font-size: 42px; color: var(--ink);
+        background: #15181d; border: 2px solid #262b33; border-radius: 18px; padding: 26px 44px; }
+      #cta .p { color: var(--accent); margin-right: 22px; }
+      #cta .cmd { display: inline-block; overflow: hidden; white-space: nowrap; width: 0; vertical-align: bottom; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="11.8" data-width="1920" data-height="1080" data-motion-blur="on">
+
+      <!-- 1 HOOK 0.00 - 2.10 -->
+      <section id="s1" class="scene clip" data-start="0" data-duration="2.1" data-track-index="0">
+        <div id="h1" class="hook"><span class="w num" id="n1">40</span> <span class="w">clients.</span></div>
+        <div id="h2" class="hook"><span class="w num" id="n2">40</span> <span class="w">reports.</span></div>
+        <div id="h3" class="hook"><span class="w">Every</span> <span class="w acc">single</span> <span class="w acc">month.</span></div>
+      </section>
+
+      <!-- 2 PRODUCT 2.10 - 6.10 -->
+      <section id="s2" class="scene clip" data-start="2.1" data-duration="4" data-track-index="0">
+        <div class="grid"></div>
+        <div id="cam">
+          <div id="win">
+            <div class="chrome"><i></i><i></i><i></i><span class="url">reports.northstar.example</span></div>
+            <nav><span>Clients</span><span>Settings</span><span class="grow"></span><span class="btn">Log out</span></nav>
+            <main>
+              <h1>Clients</h1>
+              <table>
+                <tr><th>Client</th><th>Monthly send</th><th>October 2026 report</th></tr>
+                <tr><td><strong>Cobalt Fitness</strong><br><span class="hint">team@cobaltfitness.example</span></td><td><span class="pill">On, day 4</span></td>
+                  <td><div class="status" id="st1"><span class="was">Not sent yet</span><span class="now"><span class="tick">✓</span>Sent 4 Nov, 07:00</span></div></td></tr>
+                <tr><td><strong>Harbor Lane Dental</strong><br><span class="hint">maria@harborlanedental.example</span></td><td><span class="pill">On, day 4</span></td>
+                  <td><div class="status" id="st2"><span class="was">Not sent yet</span><span class="now"><span class="tick">✓</span>Sent 4 Nov, 07:00</span></div></td></tr>
+                <tr><td><strong>Maple Grove Law</strong><br><span class="hint">office@maplegrovelaw.example</span></td><td><span class="pill">On, day 4</span></td>
+                  <td><div class="status" id="st3"><span class="was">Not sent yet</span><span class="now"><span class="tick">✓</span>Sent 4 Nov, 07:00</span></div></td></tr>
+                <tr><td><strong>Ridgeway Bakery</strong><br><span class="hint">owner@ridgewaybakery.example</span></td><td><span class="pill">On, day 4</span></td>
+                  <td><div class="status" id="st4"><span class="was">Not sent yet</span><span class="now"><span class="tick">✓</span>Sent 4 Nov, 07:00</span></div></td></tr>
+              </table>
+            </main>
+          </div>
+        </div>
+        <div id="chip"><span class="dot"></span>07:00 on the 4th</div>
+        <div id="cap"><span class="w">Sent.</span> <span class="w acc">By</span> <span class="w acc">itself.</span></div>
+      </section>
+
+      <!-- 3 REPORT 6.10 - 8.40 -->
+      <section id="s3" class="scene clip" data-start="6.1" data-duration="2.7" data-track-index="0">
+        <div class="glow"></div>
+        <div id="r-title"><span class="w">Your</span> <span class="w">logo.</span><br><span class="w">Their</span> <span class="w">numbers.</span></div>
+        <div id="r-sub">A branded PDF for every client.</div>
+        <div id="page">
+          <div class="head"><span class="logo"><b>✦</b>Northstar Digital</span><span class="m" style="margin:0">October 2026</span></div>
+          <h2>Harbor Lane Dental</h2>
+          <div class="m">Monthly report, October 2026</div>
+          <div class="stat"><div class="k">SESSIONS</div><div class="v" id="v1">4,812</div><div class="d">Sessions <em>up 10%</em></div></div>
+          <div class="stat"><div class="k">KEY EVENTS</div><div class="v" id="v2">126</div><div class="d">Key events <em>up 7%</em></div></div>
+          <div class="stat"><div class="k">ORGANIC CLICKS</div><div class="v" id="v3">2,140</div><div class="d">Organic clicks <em>up 18%</em></div></div>
+        </div>
+      </section>
+
+      <!-- 4 END CARD 8.40 - 10.00 -->
+      <section id="s4" class="scene clip" data-start="8.8" data-duration="3.0" data-track-index="0">
+        <div id="mark"><div class="badge"><i></i></div><div id="word"><span>a</span><span>g</span><span>e</span><span>n</span><span>c</span><span>y</span><span>r</span><span>e</span><span>c</span><span>a</span><span>p</span></div></div>
+        <div id="tag">Open-source client reports. Free to self-host.</div>
+        <div id="cta"><span class="p">$</span><span class="cmd" id="cmd">docker compose up -d</span></div>
+      </section>
+
+      <!-- SOUND: effects only, each on a visible action -->
+      <audio id="sx-w1" src="assets/sfx/whoosh-short.mp3" data-start="0.66" data-duration="0.57" data-track-index="2" data-volume="0.55"></audio>
+      <audio id="sx-w2" src="assets/sfx/whoosh.mp3" data-start="1.36" data-duration="0.57" data-track-index="3" data-volume="0.55"></audio>
+      <audio id="sx-w3" src="assets/sfx/whoosh-cinematic.mp3" data-start="2.0" data-duration="1.2" data-track-index="2" data-volume="0.7"
+        data-automation='{"version":1,"lanes":[{"target":"volume","points":[{"t":0,"v":1},{"t":0.8,"v":1},{"t":1.2,"v":0}]}]}'></audio>
+      <audio id="sx-p1" src="assets/sfx/pop.mp3" data-start="2.98" data-duration="0.7" data-track-index="4" data-volume="0.5"></audio>
+      <audio id="sx-c1" src="assets/sfx/click-soft.mp3" data-start="3.42" data-duration="0.36" data-track-index="5" data-volume="0.7"></audio>
+      <audio id="sx-c2" src="assets/sfx/pop.mp3" data-start="3.64" data-duration="0.7" data-track-index="8" data-volume="0.45"></audio>
+      <audio id="sx-c3" src="assets/sfx/click-soft.mp3" data-start="3.86" data-duration="0.36" data-track-index="5" data-volume="0.7"></audio>
+      <audio id="sx-c4" src="assets/sfx/ping.mp3" data-start="4.08" data-duration="1.3" data-track-index="6" data-volume="0.4"></audio>
+      <audio id="sx-w4" src="assets/sfx/whoosh.mp3" data-start="5.72" data-duration="0.57" data-track-index="3" data-volume="0.6"></audio>
+      <audio id="sx-w5" src="assets/sfx/whoosh-short.mp3" data-start="8.4" data-duration="0.57" data-track-index="2" data-volume="0.5"></audio>
+      <audio id="sx-imp" src="assets/sfx/impact-bass-1.mp3" data-start="8.82" data-duration="2.1" data-track-index="7" data-volume="0.75"
+        data-automation='{"version":1,"lanes":[{"target":"volume","points":[{"t":0,"v":1},{"t":1.5,"v":1},{"t":2.1,"v":0}]}]}'></audio>
+      <audio id="sx-key" src="assets/sfx/key-press.mp3" data-start="9.4" data-duration="0.4" data-track-index="5" data-volume="0.5"></audio>
+    </div>
+
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      const roll = (el, from, to, start, dur, fmt = (n) => String(n)) => {
+        const o = { v: from };
+        tl.to(o, { v: to, duration: dur, ease: "power3.out", onUpdate: () => { el.textContent = fmt(Math.round(o.v)); } }, start);
+      };
+      const comma = (n) => n.toLocaleString("en-US");
+
+      // ===== 1 HOOK =====
+      gsap.set(["#h2", "#h3"], { opacity: 0 });
+      // line 1: number rolls 1 -> 40 while the word blurs in (frame 0 already has the line on screen)
+      tl.fromTo("#h1 .w", { filter: "blur(10px)", opacity: 0.25 }, { filter: "blur(0px)", opacity: 1, duration: 0.18, stagger: 0.07, ease: "power2.out" }, 0);
+      roll(document.getElementById("n1"), 1, 40, 0, 0.45);
+      // whip up into line 2
+      tl.to("#h1", { y: -700, filter: "blur(18px)", duration: 0.2, ease: "power3.in" }, 0.62)
+        .fromTo("#h2", { y: 700, opacity: 1, filter: "blur(18px)" }, { y: 0, opacity: 1, filter: "blur(0px)", duration: 0.32, ease: "expo.out" }, 0.74);
+      roll(document.getElementById("n2"), 1, 40, 0.74, 0.4);
+      // whip up into line 3
+      tl.to("#h2", { y: -700, filter: "blur(18px)", duration: 0.2, ease: "power3.in" }, 1.32)
+        .set("#h3", { opacity: 1 }, 1.44)
+        .fromTo("#h3 .w", { opacity: 0, filter: "blur(8px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.14, stagger: 0.08, ease: "power2.out" }, 1.44)
+        .to("#h3", { opacity: 0, filter: "blur(10px)", duration: 0.12, ease: "power2.in" }, 2.0);
+
+      // ===== 2 PRODUCT (scene-local times are global; scene starts at 2.1) =====
+      // window rises in with blur, slight overscale settle
+      tl.fromTo("#win", { y: 520, scale: 1.08, filter: "blur(14px)" }, { y: 0, scale: 1, filter: "blur(0px)", duration: 0.55, ease: "expo.out" }, 2.1)
+        .fromTo(".grid", { y: 120 }, { y: 0, duration: 0.8, ease: "expo.out" }, 2.1);
+      // camera pushes into the status column (scale about the column's area)
+      tl.to("#cam", { scale: 1.55, x: -530, y: -470, duration: 0.6, ease: "power2.inOut" }, 2.62);
+      // time chip lands
+      tl.fromTo("#chip", { y: -40, opacity: 0, scale: 0.9 }, { y: 0, opacity: 1, scale: 1, duration: 0.42, ease: "back.out(1.6)" }, 2.95);
+      // the four rows flip to Sent, one by one (the product acting)
+      ["#st1", "#st2", "#st3", "#st4"].forEach((s, i) => {
+        const t = 3.4 + i * 0.22;
+        tl.to(s + " .was", { opacity: 0, filter: "blur(6px)", y: -10, duration: 0.14, ease: "power2.in" }, t)
+          .fromTo(s + " .now", { opacity: 0, y: 14, filter: "blur(6px)" }, { opacity: 1, y: 0, filter: "blur(0px)", duration: 0.26, ease: "expo.out" }, t + 0.06)
+          .fromTo(s + " .tick", { scale: 0 }, { scale: 1, duration: 0.34, ease: "back.out(2.2)" }, t + 0.06);
+      });
+      // camera eases back a touch while the caption lands, then holds
+      tl.to("#cam", { scale: 1.42, x: -400, y: -400, duration: 0.7, ease: "power2.inOut" }, 4.3);
+      tl.fromTo("#cap .w", { opacity: 0, filter: "blur(10px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.15, stagger: 0.09, ease: "power2.out" }, 4.45);
+      // zoom through the Harbor Lane "Sent" tick: green flood becomes the next world
+      tl.to(["#cap", "#chip"], { opacity: 0, filter: "blur(8px)", duration: 0.16, ease: "power2.in" }, 5.55)
+        .to("#cam", { scale: 4.2, x: -3640, y: -1870, duration: 0.5, ease: "power3.in" }, 5.6)
+        .set("#st2 .tick", { fontSize: 0 }, 5.7)
+        .to("#st2 .tick", { scale: 90, duration: 0.42, ease: "power3.in" }, 5.68);
+
+      // ===== 3 REPORT =====
+      tl.fromTo("#s3 .glow", { opacity: 0 }, { opacity: 1, duration: 0.6 }, 6.1)
+        .fromTo("#page", { y: 160, rotation: 4, scale: 1.12, filter: "blur(12px)" }, { y: 0, rotation: 0, scale: 1, filter: "blur(0px)", duration: 0.6, ease: "expo.out" }, 6.1)
+        .fromTo("#r-title .w", { opacity: 0, color: "rgba(255,255,255,0.3)" }, { opacity: 1, color: "#ffffff", duration: 0.16, stagger: 0.09, ease: "none" }, 6.2)
+        .fromTo("#r-sub", { opacity: 0, filter: "blur(8px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2 }, 6.75)
+        .fromTo("#page .stat", { opacity: 0, x: 30 }, { opacity: 1, x: 0, duration: 0.4, stagger: 0.12, ease: "expo.out" }, 6.45);
+      roll(document.getElementById("v1"), 0, 4812, 6.5, 0.9, comma);
+      roll(document.getElementById("v2"), 0, 126, 6.62, 0.9, comma);
+      roll(document.getElementById("v3"), 0, 2140, 6.74, 0.9, comma);
+      // carry: page shrinks and slides out as the end card arrives
+      tl.to("#page", { scale: 0.6, x: -560, opacity: 0, filter: "blur(6px)", duration: 0.38, ease: "power3.in" }, 8.42)
+        .to(["#r-title", "#r-sub"], { opacity: 0, filter: "blur(8px)", duration: 0.16, ease: "power2.in" }, 8.4);
+
+      // ===== 4 END CARD =====
+      tl.fromTo("#mark .badge", { scale: 0.2, rotation: -30, opacity: 0 }, { scale: 1, rotation: 0, opacity: 1, duration: 0.5, ease: "back.out(1.7)" }, 8.82)
+        .fromTo("#word span", { opacity: 0.25, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2, stagger: 0.035, ease: "power2.out" }, 8.9)
+        .fromTo("#tag", { opacity: 0, filter: "blur(8px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2 }, 9.25)
+        .fromTo("#cta", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.35, ease: "expo.out" }, 9.35)
+        .to("#cmd", { width: "20ch", duration: 0.5, ease: "steps(20)" }, 9.45);
+
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>
