@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { hold, pickTransitions, planFilm, sceneLength, T } from "../skills/readmereel/scripts/lib/plan.mjs";
+import { hold, pickTransitions, planFilm, sceneBeats, sceneLength, T } from "../skills/readmereel/scripts/lib/plan.mjs";
 import { validStory2 } from "./helpers.mjs";
 
 const FRAME = 1 / 30;
@@ -137,4 +137,30 @@ test("a short story stretched to 15 s keeps the invariants and ends at 15 s or l
   }
   const last = p.scenes.at(-1);
   assert.ok(Math.abs(last.start + last.duration - p.duration) < 1e-9);
+});
+
+// Readability margins: holds are measured from when things land, and every scene keeps EXIT = T + 0.12 after its
+// last hold for the outgoing transition.
+const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg ?? ""} ${a} != ${b}`);
+
+test("list items wait for the previous item to land and hold, and the scene ends a hold after the last lands", () => {
+  const scene = { type: "list", items: ["one two", "three", "four five six"] };
+  const { itemStarts } = sceneBeats(scene, validStory2());
+  // land0 = 0.35; start(k) = land(k-1) + hold(k-1) + 0.16; land(k) = start(k) + 0.2
+  near(itemStarts[0], 0);
+  near(itemStarts[1], 0.35 + hold("one two") + 0.16, "start 1");
+  near(itemStarts[2], itemStarts[1] + 0.2 + hold("three") + 0.16, "start 2");
+  near(sceneLength(scene, validStory2()), itemStarts[2] + 0.2 + hold("four five six") + T + 0.12, "length");
+});
+
+test("a counter holds its longest label and note after the last item settles", () => {
+  const scene = { type: "counter", items: [{ value: 1, label: "Sessions", note: "up 10%" }, { value: 2, label: "Key events" }] };
+  const { itemStarts } = sceneBeats(scene, validStory2());
+  near(sceneLength(scene, validStory2()), itemStarts.at(-1) + 1.08 + hold("Sessions up 10%") + T + 0.12);
+});
+
+test("the title badge is on screen from the first frame and the promise holds after its last word lands", () => {
+  const scene = { type: "title", promise: "Monthly client reports that send themselves" };
+  assert.deepEqual(sceneBeats(scene, validStory2()).landTimes, [0, 0.2, 0.65]);
+  near(sceneLength(scene, validStory2()), 0.8 + 0.07 * 5 + 0.16 + hold(scene.promise) + T + 0.12);
 });

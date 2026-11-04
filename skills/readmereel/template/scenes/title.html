@@ -31,13 +31,14 @@ __RUNTIME__
   const promise = q(".title-promise");
   // Sizes first (they read layout), then the tweens.
   RR.fit(name, wide ? 200 : 150, W * 0.8, 0.6);
-  RR.fitLines(promise, wide ? 52 : 48, wide ? 1400 : 920, 3);
+  RR.fitLines(promise, wide ? 52 : 64, wide ? 1400 : 920, 3);
   const letters = Array.from(name.textContent);
   name.textContent = "";
-  letters.forEach((c) => { const s = document.createElement("span"); s.textContent = c === " " ? " " : c; name.appendChild(s); });
+  letters.forEach((c) => { const s = document.createElement("span"); s.textContent = c === " " ? "\u00a0" : c; name.appendChild(s); });
   const words = RR.words(promise);
-  // The mark springs in, the name sharpens letter by letter, the promise blurs in word by word: then dead still.
-  tl.fromTo(q(".title-badge"), { scale: 0.2, rotation: -30, opacity: 0 }, { scale: 1, rotation: 0, opacity: 1, duration: 0.5, ease: "back.out(1.7)" }, tBadge)
+  // The mark is on screen (small) from the first frame and springs up, the name sharpens letter by letter, the promise
+  // blurs in word by word: then dead still.
+  tl.fromTo(q(".title-badge"), { scale: 0.2, rotation: -30 }, { scale: 1, rotation: 0, duration: 0.5, ease: "back.out(1.7)" }, tBadge)
     .fromTo(qa(".title-name span"), { opacity: 0, filter: "blur(14px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.28, stagger: 0.035, ease: "power2.out" }, tName);
   RR.blurIn(tl, words, tPromise, { stagger: 0.07, duration: 0.16 });
   S.done();

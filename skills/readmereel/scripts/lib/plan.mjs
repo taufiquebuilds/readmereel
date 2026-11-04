@@ -3,6 +3,8 @@ import { DEFAULT_ACCENT } from "./story.mjs";
 // Film plan: scene timing, transitions, grounds and sound cues. Pure data, no I/O, deterministic.
 
 export const T = 0.35;
+// After a scene's last hold: the outgoing transition (T) plus a margin, so nothing is still being read as it leaves.
+const EXIT = T + 0.12;
 const FRAME = 1 / 30;
 const MIN_FILM = 15;
 const MAX_FILM = 35;
@@ -34,7 +36,8 @@ export function sceneBeats(scene, story = {}) {
       return { lineStarts: lines.map((_, k) => sum(k, (j) => T + hold(lines[j]))) };
     }
     case "title":
-      return { landTimes: [0.15, 0.35, 0.8] };
+      // Badge, name, promise. The badge is on screen (small) from the first frame.
+      return { landTimes: [0, 0.2, 0.65] };
     case "ui": {
       const focus = scene.focus ?? [];
       const focusStarts = focus.map((_, k) => 0.8 + sum(k, (j) => 0.6 + hold(focus[j].label ?? "")));
@@ -53,8 +56,18 @@ export function sceneBeats(scene, story = {}) {
     case "compare":
       return { wipeStart: 0.6 + hold(scene.before?.label) };
     case "list": {
+      // Item 0 lands with the scene's entrance (0.35); each next item starts once the previous one has landed and been
+      // held, and lands 0.2 s after it starts.
       const items = scene.items ?? [];
-      return { itemStarts: items.map((_, k) => sum(k, (j) => 0.25 + hold(items[j]))) };
+      const itemStarts = [];
+      let land = 0.35;
+      items.forEach((item, k) => {
+        if (k === 0) { itemStarts.push(0); return; }
+        const start = land + hold(items[k - 1]) + 0.16;
+        itemStarts.push(start);
+        land = start + 0.2;
+      });
+      return { itemStarts };
     }
     case "end":
       return { landTimes: [0.1, 0.25, 0.6, 0.75], typeStart: 0.75 };
@@ -71,7 +84,8 @@ export function sceneLength(scene, story = {}) {
       return b.lineStarts.at(-1) + T + hold(lines.at(-1)) + 0.2;
     }
     case "title":
-      return 0.8 + 0.2 + hold(scene.promise) + 0.2;
+      // The promise's words blur in 0.07 s apart from 0.8 and each takes 0.16 s; then it holds.
+      return 0.8 + 0.07 * Math.max(0, words(scene.promise) - 1) + 0.16 + hold(scene.promise) + EXIT;
     case "ui":
       return b.captionAt + hold(scene.caption ?? "") + 0.35;
     case "terminal":
@@ -79,7 +93,8 @@ export function sceneLength(scene, story = {}) {
     case "counter": {
       const items = scene.items ?? [];
       const longest = Math.max(...items.map((it) => hold(`${it.label} ${it.note ?? ""}`)));
-      return 0.35 + 0.12 * (items.length - 1) + 1.0 + longest;
+      // The last item's roll and suffix pop settle 1.08 s after it starts; then the longest label and note hold.
+      return b.itemStarts.at(-1) + 1.08 + longest + EXIT;
     }
     case "compare": {
       const after = `${scene.after?.label ?? ""} ${(scene.after?.points ?? []).join(" ")}`;
@@ -87,7 +102,7 @@ export function sceneLength(scene, story = {}) {
     }
     case "list": {
       const items = scene.items ?? [];
-      return b.itemStarts[2] + 0.25 + hold(items[2]);
+      return b.itemStarts[2] + 0.2 + hold(items[2]) + EXIT;
     }
     case "end":
       return Math.max(0.75 + endTyping(story) + 2.5, 3.2);

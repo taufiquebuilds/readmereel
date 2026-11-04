@@ -10,14 +10,15 @@
   #root[data-style="signal"][data-tone="light"] { --muted: rgba(0, 0, 0, 0.72); --track: rgba(0, 0, 0, 0.2); }
   .list-stage { display: flex; flex-direction: column; align-items: center; }
   .list-head { display: flex; align-items: center; gap: 26px; margin-bottom: 54px; font-family: "JetBrains Mono", monospace; font-size: 44px; font-weight: 500; line-height: 1; }
-  #root[data-layout="tall"] .list-head { margin-bottom: 72px; }
+  #root[data-layout="tall"] .list-head { margin-bottom: 72px; font-size: 56px; gap: 32px; }
+  #root[data-layout="tall"] .list-track { width: 168px; height: 5px; }
   .list-index { display: inline-flex; color: var(--mark); font-variant-numeric: tabular-nums; }
   .list-reel-mask { display: inline-block; height: 1.15em; clip-path: inset(0); }
   .list-reel { display: block; }
   .list-reel span { display: block; height: 1.15em; line-height: 1.15em; }
   .list-index > span:first-child { line-height: 1.15em; }
   .list-track { width: 132px; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; }
-  .list-fill { width: 100%; height: 100%; background: var(--mark); transform-origin: 0 50%; }
+  .list-fill { display: block; width: 100%; height: 100%; background: var(--mark); transform-origin: 0 50%; }
   .list-of { color: var(--muted); font-variant-numeric: tabular-nums; }
   .list-slots { display: grid; justify-items: center; align-items: center; }
   /* Every item sits in the same cell; it rises into and leaves through its own window (soft-edged while items move). */
@@ -42,9 +43,10 @@ __RUNTIME__
   const items = qa(".list-item");
   const slots = qa(".list-slot");
   const n = items.length;
-  // Sizes first (they read layout): each item balanced over at most 2 lines (wide) or 3 (tall).
+  // Sizes first (they read layout): each item balanced over at most 2 lines (wide) or 3 (tall). A long word with no
+  // spaces breaks anywhere rather than shrink below 72 px.
   items.forEach((el, k) => {
-    RR.fitLines(el, wide ? 150 : 112, Math.round(W * 0.84), wide ? 2 : 3);
+    RR.fitLines(el, 150, Math.round(W * 0.84), wide ? 2 : 3, { breakBelow: 72 });
     slots[k].style.fontSize = el.style.fontSize;
   });
   const reel = q(".list-reel");

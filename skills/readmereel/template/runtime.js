@@ -81,11 +81,27 @@ var RR = (function () {
     tl.fromTo(els, { opacity: o.from ?? 0, filter: "blur(" + (o.blur ?? 8) + "px)" },
       { opacity: 1, filter: "blur(0px)", duration: o.duration ?? 0.14, stagger: o.stagger ?? 0.08, ease: "power2.out" }, t);
   }
-  function roll(tl, el, from, to, t, dur, decimals) {
+  // Decimal places a value is shown with: as many as String(value) has, capped at 1 (stories allow one).
+  function decimals(value) {
+    const frac = String(value).split(".")[1] || "";
+    return Math.min(1, frac.length);
+  }
+  // A value as it lands: thousands separators and at most one decimal place, cut (never rounded) from String(value),
+  // so 99.95 reads "99.9" and never "100.0".
+  function numText(value) {
+    const str = String(value);
+    const neg = str.startsWith("-");
+    const [int, frac = ""] = str.replace("-", "").split(".");
+    const d = decimals(value);
+    return (neg ? "-" : "") + Number(int).toLocaleString("en-US") + (d ? "." + frac.slice(0, d) : "");
+  }
+  // Rolls el's text from `from` to `to`; the landed frame always reads numText(to) exactly.
+  function roll(tl, el, from, to, t, dur, places) {
+    const d = places ?? decimals(to);
     const o = { v: from };
-    const fmt = (v) => Number(v).toLocaleString("en-US", { minimumFractionDigits: decimals || 0, maximumFractionDigits: decimals || 0 });
+    const fmt = (v) => (v === to ? numText(to) : Number(v).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d }));
     el.textContent = fmt(from);
-    tl.to(o, { v: to, duration: dur, ease: "power3.out", onUpdate: () => { el.textContent = fmt(decimals ? o.v : Math.round(o.v)); } }, t);
+    tl.to(o, { v: to, duration: dur, ease: "power3.out", onUpdate: () => { el.textContent = fmt(d ? o.v : Math.round(o.v)); } }, t);
   }
   // Size one-line text to fit width w px: at most `max` px, never below 28 px. Measures the text at `max` (HyperFrames
   // loads fonts before scene scripts run; width scales linearly with size); k, the average glyph width in em, is only
@@ -104,15 +120,20 @@ var RR = (function () {
   // Size wrapping text to at most `lines` lines inside a box w px wide: the largest size from `max` down (2 px steps,
   // never below 28) at which no word sticks out and the text takes at most `lines` lines. Reads real layout (offset
   // sizes, so transforms never count); call it before any tween touches the element. Pair with `text-wrap: balance`.
-  function fitLines(el, max, w, lines) {
+  // With o.breakBelow, text that only fits whole words below that size breaks anywhere instead (a long word with no
+  // spaces wraps at a large size rather than shrinking to a sliver).
+  function fitLines(el, max, w, lines, o) {
     Object.assign(el.style, { width: w + "px", maxWidth: w + "px", whiteSpace: "normal" });
-    for (let s = max; s >= 28; s -= 2) {
+    const fits = (s) => {
       el.style.fontSize = s + "px";
       const lh = parseFloat(getComputedStyle(el).lineHeight) || s * 1.2;
-      if (el.scrollWidth <= w + 1 && Math.round(el.offsetHeight / lh) <= lines) return s;
-    }
-    el.style.fontSize = "28px";
+      return el.scrollWidth <= w + 1 && Math.round(el.offsetHeight / lh) <= lines;
+    };
+    const floor = o && o.breakBelow ? o.breakBelow : 28;
+    for (let s = max; s >= floor; s -= 2) if (fits(s)) return s;
     el.style.overflowWrap = "anywhere";
+    for (let s = max; s >= 28; s -= 2) if (fits(s)) return s;
+    el.style.fontSize = "28px";
     return 28;
   }
   function type(tl, el, t, perChar) {
@@ -169,11 +190,15 @@ var RR = (function () {
     const hero = S.q(".hero") || content(S)[0];
     switch (D.out) {
       case "whip":
-        // Leaves just before the next scene lands, as in the prototype (out at 0.62 s, in at 0.74 s), and fades as it
-        // goes: HyperFrames' motion blur paints a moving element above later scenes, so it must be gone, not covered.
-        tl.fromTo(content(S), { filter: "blur(0px)" },
-          { [wide ? "yPercent" : "xPercent"]: -60, filter: "blur(18px)", duration: 0.22, ease: "power3.in", immediateRender: false }, end - T - 0.12)
-          .to(content(S), { opacity: 0, duration: 0.15, ease: "power1.in" }, end - T - 0.1);
+        // Leaves under the next scene's wipe (which starts at end - T and covers most of the frame in its first 0.1 s),
+        // so the frame is never empty between them. HyperFrames' motion blur redraws a moving element above later
+        // scenes, so the leaving content opts out of it (its own blur filter smears it instead) and stays beneath the
+        // wipe; it fades once the wipe has all but covered it.
+        const els = content(S);
+        tl.set(els, { attr: { "data-motion-blur": "off" } }, end - T - 0.05)
+          .fromTo(els, { filter: "blur(0px)" },
+            { [wide ? "yPercent" : "xPercent"]: -60, filter: "blur(18px)", duration: 0.24, ease: "power3.in", immediateRender: false }, end - T)
+          .to(els, { opacity: 0, duration: 0.14, ease: "power1.in" }, end - T + 0.08);
         break;
       case "blur":
         tl.to(content(S), { opacity: 0, filter: "blur(8px)", duration: 0.18, ease: "power2.in" }, end - T);
@@ -184,19 +209,23 @@ var RR = (function () {
       case "zoom": {
         const target = S.q("[data-zoom-target]") || hero;
         const { x: cx, y: cy } = centre(target, R);
+        // The dot starts at 0.6 x the target's larger side and only once the camera is moving fast (end - 0.22, under
+        // its blur); it fades in over 0.06 s and grows past the frame's corners at once, so it reads as the next ground
+        // swallowing the target rather than a hole punched in it.
+        const r = Math.max(30, Math.round(0.3 * Math.max(target.offsetWidth, target.offsetHeight)));
         const dot = document.createElement("div");
         dot.className = "zoom-dot";
         dot.setAttribute("data-layout-ignore", "");
-        Object.assign(dot.style, { position: "absolute", left: cx - 30 + "px", top: cy - 30 + "px", width: "60px", height: "60px", borderRadius: "50%", background: D.nextGround, opacity: "0", zIndex: "50", pointerEvents: "none" });
+        Object.assign(dot.style, { position: "absolute", left: cx - r + "px", top: cy - r + "px", width: 2 * r + "px", height: 2 * r + "px", borderRadius: "50%", background: D.nextGround, opacity: "0", zIndex: "50", pointerEvents: "none" });
         R.appendChild(dot);
         const cam = S.q(".cam") || R;
         tl.to(cam, { scale: 3, transformOrigin: cx + "px " + cy + "px", duration: 0.45, ease: "power3.in" }, end - 0.45)
-          .set(dot, { opacity: 1 }, end - 0.3)
-          .fromTo(dot, { scale: 1 }, { scale: Math.ceil((Math.hypot(W, H) / 30) * 1.1), duration: 0.3, ease: "power3.in" }, end - 0.3);
+          .fromTo(dot, { opacity: 0 }, { opacity: 1, duration: 0.06, ease: "none", immediateRender: false }, end - 0.22)
+          .fromTo(dot, { scale: 1 }, { scale: Math.ceil((Math.hypot(W, H) / r) * 1.1), duration: 0.22, ease: "power2.in", immediateRender: false }, end - 0.22);
         break;
       }
       default: break; // flood, or the last scene: hold
     }
   }
-  return { T, scene, words, blurIn, roll, fit, fitLines, type, centre, readable, contrast };
+  return { T, scene, words, blurIn, roll, decimals, numText, fit, fitLines, type, centre, readable, contrast };
 })();
