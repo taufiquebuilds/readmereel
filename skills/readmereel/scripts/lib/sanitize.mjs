@@ -15,10 +15,18 @@
 // checked to stay inside the screen, position:fixed/sticky made absolute, and a
 // final scan that fails closed (strings terminated, brackets balanced).
 //
+// Size and cost: input over 256 KB is refused, open elements are capped at a depth of 256, and every scan is
+// either linear or bounded by that depth, so no input can make the sanitizer slow.
+//
 // No dependencies. This is a defence for generated demo screens that are
 // rendered to video, not a general-purpose sanitiser for untrusted web pages.
 
 const REJECTED_AT_RULE = (name) => new Error(`screen: @${name} is not allowed`);
+
+// A rebuilt demo screen is a few KB; anything this large is refused before it is parsed.
+const MAX_BYTES = 256 * 1024;
+// Open elements deeper than this are dropped (their text is kept), so every walk over the open-element stack is short.
+const MAX_DEPTH = 256;
 
 // ---------------------------------------------------------------- allowlists
 
@@ -506,6 +514,8 @@ const escapeLt = (css) => css.replace(/</g, "\\3c ");
 
 // ------------------------------------------------------------------ HTML
 
+const COMMENT_END = /--!?>/g;
+
 function isWs(c) { return c === " " || c === "\t" || c === "\n" || c === "\f" || c === "\r"; }
 
 // Parses a tag whose "<" is at i. Returns { name, attrs, selfClosing, end } or { end: -1 }
@@ -598,8 +608,9 @@ function cleanAttributes(tag, ns, attrs, ctx) {
     }
     if (lname === "class") {
       const all = value.split(/[ \t\n\f\r]+/).filter(Boolean);
-      const keep = all.filter((c) => !RESERVED_CLASS.has(c.toLowerCase()) && !RESERVED_CLASS_PREFIX.test(c.toLowerCase()));
-      if (keep.length < all.length) drop(`template class names (${all.filter((c) => !keep.includes(c)).join(" ")})`);
+      const reserved = (c) => RESERVED_CLASS.has(c.toLowerCase()) || RESERVED_CLASS_PREFIX.test(c.toLowerCase());
+      const keep = all.filter((c) => !reserved(c));
+      if (keep.length < all.length) drop(`template class names (${all.filter(reserved).join(" ")})`);
       if (keep.length) out.push(["class", keep.join(" ")]);
       continue;
     }
@@ -622,9 +633,9 @@ function cleanAttributes(tag, ns, attrs, ctx) {
     }
     if (lname === "href" && tag === "a") {
       const c = classifyUrl(value);
+      // Only links within the screen: a relative link names a project file (compositions/..., assets/...).
       if (c.ok && c.kind === "fragment" && (c.value === "#" || ID.test(c.value.slice(1)))) out.push(["href", c.value === "#" ? "#" : `#${local(c.value.slice(1))}`]);
-      else if (c.ok && c.kind === "local") out.push(["href", c.value]);
-      else drop(`${c.ok ? "unsupported link" : c.why} in href`);
+      else drop(`${c.ok ? "link that is not a #fragment" : c.why} in href`);
       continue;
     }
     if ((lname === "href" || lname === "xlink:href") && tag === "use") {
@@ -662,6 +673,7 @@ function cleanAttributes(tag, ns, attrs, ctx) {
 export function sanitizeScreen(html, scopeClass) {
   if (typeof html !== "string") throw new TypeError("screen: html must be a string");
   if (typeof scopeClass !== "string" || !/^[A-Za-z_][A-Za-z0-9_-]*$/.test(scopeClass)) throw new Error("screen: invalid scope class");
+  if (html.length > MAX_BYTES || Buffer.byteLength(html, "utf8") > MAX_BYTES) throw new Error("screen: the screen HTML is over 256 KB");
 
   const removed = [];
   const images = [];
@@ -677,6 +689,14 @@ export function sanitizeScreen(html, scopeClass) {
   let out = [];
   let stack = []; // { name: as emitted, lname, ns: "html" | "svg" }
   let bodySeen = false;
+  // A start tag past MAX_DEPTH is dropped and counted, by name, on the deepest open element; a matching end tag inside
+  // that element is then dropped too, so it cannot close an outer element. The counts go when that element closes.
+  const overflow = (name) => {
+    const t = top();
+    t.over ??= new Map();
+    t.over.set(name, (t.over.get(name) ?? 0) + 1);
+    removed.push(`<${name}> nested more than ${MAX_DEPTH} deep`);
+  };
   const top = () => stack[stack.length - 1];
   const closeTo = (k) => { while (stack.length > k) out.push(`</${stack.pop().name}>`); };
   const push = (name, lname, ns) => stack.push({ name, lname, ns });
@@ -706,7 +726,7 @@ export function sanitizeScreen(html, scopeClass) {
       let end;
       if (src[i + 4] === ">") end = i + 5;
       else if (src.startsWith("->", i + 4)) end = i + 6;
-      else { const m = /--!?>/.exec(src.slice(i + 4)); end = m ? i + 4 + m.index + m[0].length : n; }
+      else { COMMENT_END.lastIndex = i + 4; const m = COMMENT_END.exec(src); end = m ? m.index + m[0].length : n; }
       removed.push("HTML comment");
       i = end;
       continue;
@@ -734,6 +754,8 @@ export function sanitizeScreen(html, scopeClass) {
 
     if (isEnd) {
       if (lname === "body" && bodySeen) break; // nothing after </body> is used
+      const over = top()?.over?.get(lname);
+      if (over) { top().over.set(lname, over - 1); continue; }
       let k = stack.length - 1;
       while (k >= 0 && stack[k].lname !== lname) k--;
       if (k >= 0) closeTo(k);
@@ -789,6 +811,7 @@ export function sanitizeScreen(html, scopeClass) {
       }
       // Nested links and buttons are re-parented by the browser; keep only the outer one.
       if ((tag === "a" || tag === "button") && stack.some((e) => e.lname === tag)) { removed.push(`nested <${tag}>`); continue; }
+      if (impliedBody && stack.length + 2 > MAX_DEPTH) { overflow(lname); continue; }
       if (impliedBody) { out.push("<tbody>"); push("tbody", "tbody", "html"); }
       // Write out the closes the browser would imply.
       if (tag === "li") {
@@ -807,6 +830,7 @@ export function sanitizeScreen(html, scopeClass) {
     // In SVG "/>" closes the element (an unclosed <circle> would swallow its siblings); on an HTML element the browser
     // ignores it, so it is only kept on void elements.
     const selfClosed = VOID.has(tag) || (ns === "svg" && tok.selfClosing);
+    if (!selfClosed && stack.length >= MAX_DEPTH) { overflow(lname); continue; }
     out.push(`<${tag}${attrs.map(([k, v]) => ` ${k}="${escAttr(v)}"`).join("")}${tok.selfClosing && selfClosed ? "/" : ""}>`);
     if (!selfClosed) push(tag, lname, ns);
   }

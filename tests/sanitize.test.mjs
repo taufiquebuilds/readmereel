@@ -99,7 +99,7 @@ test("attribute values are decoded before URLs are judged", () => {
 
 test("only relative or local-image URLs survive", () => {
   const out = clean(`<img src="a/b.png"><img src="./c.png"><img src="data:image/png;base64,AAAA"><a href="#top">t</a><a href="page.html">p</a>`);
-  assert.equal(out.html, `<img src="a/b.png"><img src="./c.png"><img src="data:image/png;base64,AAAA"><a href="#s-top">t</a><a href="page.html">p</a>`);
+  assert.equal(out.html, `<img src="a/b.png"><img src="./c.png"><img src="data:image/png;base64,AAAA"><a href="#s-top">t</a><a>p</a>`);
   assert.deepEqual(out.images, ["a/b.png", "./c.png"]);
 });
 
@@ -392,4 +392,59 @@ test("structural: hostile mixes always give balanced markup with only allowliste
     assertBalanced(out.html, h);
     assertNoForeignData(out.html, h);
   }
+});
+
+// ---- round 2 ----
+
+test("round 2 A: a screen over 256 KB is refused", () => {
+  const msg = { message: "screen: the screen HTML is over 256 KB" };
+  assert.throws(() => clean("a".repeat(256 * 1024 + 1)), msg);
+  assert.throws(() => clean("\u00e9".repeat(140000)), msg, "counted in UTF-8 bytes");
+  assert.throws(() => clean("<div>".repeat(1 << 18)), msg);
+  assert.equal(clean("a".repeat(256 * 1024)).html.length, 256 * 1024, "exactly 256 KB is allowed");
+});
+
+test("round 2 A: open elements are capped at depth 256, and the dropped tags' end tags go with them", () => {
+  const out = clean("<div>".repeat(300) + "x" + "</div>".repeat(300) + "<p>after</p>");
+  assert.equal((out.html.match(/<div>/g) ?? []).length, 256);
+  assert.ok(out.html.endsWith("x" + "</div>".repeat(256) + "<p>after</p>"), out.html.slice(-80));
+  assertBalanced(out.html, "deep divs");
+  // The inner <span> is past the cap: its </span> must not close the outer <span> (and with it every <div>).
+  const inner = clean("<span>" + "<div>".repeat(255) + "<span>y</span>z" + "</div>".repeat(255) + "w</span>");
+  assert.ok(inner.html.includes("y" + "z</div>"), "z stays in the deepest div");
+  assert.ok(inner.html.endsWith("</div>w</span>"), inner.html.slice(-40));
+  assertBalanced(inner.html, "inner span");
+  const svg = clean("<svg>" + "<g>".repeat(400) + "</svg>");
+  assert.equal((svg.html.match(/<g>/g) ?? []).length, 255);
+  assertBalanced(svg.html, "deep svg");
+});
+
+test("round 2 A: ~200 KB adversarial inputs finish quickly", () => {
+  const cases = {
+    "deep divs": "<div>".repeat(40000) + "x",
+    "deep spans then stray end tags": "<span>".repeat(17000) + "</q>".repeat(25000),
+    "divs then li": "<div>".repeat(20000) + "<li></li>".repeat(11000),
+    "spans then div (p scope)": "<span>".repeat(17000) + "<div></div>".repeat(9000),
+    "a then nested a": "<a>" + "<div>".repeat(20000) + "<a>".repeat(30000),
+    "deep svg": "<svg>" + "<g>".repeat(66000),
+    "class list with a reserved name": '<div class="' + "a ".repeat(100000) + 'hero">x</div>',
+    "comments": "<!--a-->".repeat(25000),
+    "deep tag soup": "<b><i><p><li><div><table><tr><td>".repeat(6000),
+  };
+  for (const [label, html] of Object.entries(cases)) {
+    assert.ok(Buffer.byteLength(html) < 256 * 1024 && html.length > 150000, label);
+    const t = performance.now();
+    const out = clean(html);
+    const ms = performance.now() - t;
+    assert.ok(ms < 1500, `${label} took ${ms.toFixed(0)} ms`);
+    assertBalanced(out.html, label);
+  }
+});
+
+test("round 2 D: links keep only same-document fragments", () => {
+  for (const href of ["page.html", "./a.png", "compositions/evil.html", "a/b", "?x=1", "data:image/png;base64,AA"]) {
+    const out = clean(`<a href="${href}">k</a>`);
+    assert.equal(out.html, "<a>k</a>", href);
+  }
+  assert.equal(clean('<a href="#top">t</a><a href="#">h</a>').html, '<a href="#s-top">t</a><a href="#">h</a>');
 });

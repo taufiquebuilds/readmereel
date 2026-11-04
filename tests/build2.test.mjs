@@ -1,10 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildProject, LAYOUTS, prepareScreen } from "../skills/readmereel/scripts/lib/build.mjs";
 import { planFilm } from "../skills/readmereel/scripts/lib/plan.mjs";
 import { tmpDir, validStory2 } from "./helpers.mjs";
+
+// The first bytes of real image files: copied images are checked by content, not by name.
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13]);
+const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16]);
+const GIF = Buffer.from("GIF89a\x01\x00", "latin1");
+const WEBP = Buffer.concat([Buffer.from("RIFF"), Buffer.from([8, 0, 0, 0]), Buffer.from("WEBPVP8 ")]);
 
 function onlyHookAndEnd() {
   const s = validStory2();
@@ -171,7 +177,7 @@ test("sound cues become audio tags for the effects that exist, copied with their
 test("a rebuilt screen is sanitized, scoped and its images copied into the project", () => {
   const base = tmpDir();
   mkdirSync(join(base, "screens/shots"), { recursive: true });
-  writeFileSync(join(base, "screens/shots/a.png"), "png");
+  writeFileSync(join(base, "screens/shots/a.png"), PNG);
   writeFileSync(join(base, "screens/bg.svg"), "<svg/>");
   writeFileSync(join(base, "screens/home.html"),
     `<style>.top{background:url("bg.svg")}</style><div class="top" onclick="x()"><img src="shots/a.png"><script>bad()</script></div>`);
@@ -181,9 +187,12 @@ test("a rebuilt screen is sanitized, scoped and its images copied into the proje
   assert.ok(screen.html.includes('<img src="assets/screens/s3-1.png">'), screen.html);
   assert.ok(!screen.html.includes("onclick") && !screen.html.includes("script"));
   assert.ok(screen.css.includes('.screen-s3 .top{background:url("assets/screens/s3-2.svg")}'), screen.css);
-  assert.ok(screen.markup.startsWith('<div class="screen-s3" style="position:relative!important;overflow:clip!important;contain:paint!important"><div class="top">'), screen.markup);
+  // Two wrappers: the screen's own root rules (html, body, :root) land on the inner .screen-s3; the outer frame, which
+  // no screen rule can select, clips and contains it and cannot itself be moved, scaled or raised.
+  assert.ok(screen.markup.startsWith('<div class="screen-frame-s3" style="position:relative!important;overflow:clip!important;contain:paint!important;transform:none!important;zoom:1!important;z-index:auto!important"><div class="screen-s3"><div class="top">'), screen.markup);
+  assert.ok(screen.markup.endsWith("</div></div></div>"), screen.markup);
   assert.equal(screen.style, `<style>${screen.css}</style>`, "the screen's CSS gets its own <style> element");
-  assert.equal(readFileSync(join(project, "assets/screens/s3-1.png"), "utf8"), "png");
+  assert.deepEqual(readFileSync(join(project, "assets/screens/s3-1.png")), PNG);
   assert.equal(readFileSync(join(project, "assets/screens/s3-2.svg"), "utf8"), "<svg/>");
   writeFileSync(join(base, "screens/missing.html"), `<img src="nope.png">`);
   assert.throws(() => prepareScreen({ type: "ui", html: "screens/missing.html" }, "s4", { baseDir: base, projectDir: project }), /image not found: nope\.png/);
@@ -218,7 +227,7 @@ test("title: name, promise and badge are filled, escaped and mapped to their fie
     assert.equal(sceneData(html).data.promise, "Reports that send $& themselves </script>");
   }
   const base = tmpDir();
-  writeFileSync(join(base, "logo.png"), "png");
+  writeFileSync(join(base, "logo.png"), PNG);
   const html = sceneFile({ ...story, logo: "logo.png" }, "wide", "s2", "title", { baseDir: base });
   assert.ok(html.includes('<div class="title-badge" data-zoom-target><img src="assets/logo.png" alt=""></div>'));
 });
@@ -258,4 +267,75 @@ test("counter: each item's value, suffix, label and note are filled and mapped; 
     assert.ok(html.includes('data-zoom-target'), "the first value is the zoom target");
     assert.ok(!/__[A-Z][A-Z0-9_]*__/.test(html), "no placeholders left");
   }
+});
+
+// ---------- security round 2: copied images ----------
+
+function screenBase(files) {
+  const base = tmpDir();
+  mkdirSync(join(base, "screens/shots"), { recursive: true });
+  for (const [rel, body] of Object.entries(files)) writeFileSync(join(base, rel), body);
+  return base;
+}
+const prep = (base, html = "screens/home.html", id = "s5") => {
+  const project = tmpDir();
+  return prepareScreen({ type: "ui", html }, id, { baseDir: base, projectDir: project, field: "scenes[4].html" });
+};
+
+test("screen images: a symlink, or a path that resolves outside the project, is refused and names the field", () => {
+  const outside = tmpDir();
+  writeFileSync(join(outside, "secret.png"), PNG);
+  const base = screenBase({ "screens/home.html": '<img src="shots/a.png">' });
+  symlinkSync(join(outside, "secret.png"), join(base, "screens/shots/a.png"));
+  assert.throws(() => prep(base), /^Error: scenes\[4\]\.html: image is a symbolic link: shots\/a\.png$/);
+  // a symlink in the CSS
+  const css = screenBase({ "screens/home.html": '<style>p{background:url(bg.png)}</style><p>x</p>' });
+  symlinkSync(join(outside, "secret.png"), join(css, "screens/bg.png"));
+  assert.throws(() => prep(css), /scenes\[4\]\.html: image is a symbolic link: bg\.png/);
+  // a symlinked folder: the file itself is plain, but its real path is outside the project
+  const dir = screenBase({ "screens/home.html": '<img src="pics/secret.png">' });
+  symlinkSync(outside, join(dir, "screens/pics"));
+  assert.throws(() => prep(dir), /scenes\[4\]\.html: image is outside the project folder: pics\/secret\.png/);
+  // the screen file itself
+  const self = screenBase({});
+  writeFileSync(join(outside, "page.html"), "<p>secret</p>");
+  symlinkSync(join(outside, "page.html"), join(self, "screens/home.html"));
+  assert.throws(() => prep(self), /scenes\[4\]\.html: the screen file is a symbolic link/);
+});
+
+test("screen images: the file must really be the image its name says", () => {
+  const fake = screenBase({ "screens/home.html": '<img src="shots/a.png">', "screens/shots/a.png": "<!doctype html><script>x()</script>" });
+  assert.throws(() => prep(fake), /^Error: scenes\[4\]\.html: image is not a PNG file: shots\/a\.png$/);
+  const wrong = screenBase({ "screens/home.html": '<img src="shots/a.jpg">', "screens/shots/a.jpg": PNG });
+  assert.throws(() => prep(wrong), /scenes\[4\]\.html: image is not a JPEG file: shots\/a\.jpg/);
+  const svg = screenBase({ "screens/home.html": '<img src="shots/a.svg">', "screens/shots/a.svg": "<html>no</html>" });
+  assert.throws(() => prep(svg), /scenes\[4\]\.html: image is not an SVG file: shots\/a\.svg/);
+  const empty = screenBase({ "screens/home.html": '<img src="shots/a.gif">', "screens/shots/a.gif": "" });
+  assert.throws(() => prep(empty), /image is not a GIF file/);
+  const ok = screenBase({
+    "screens/home.html": '<img src="shots/a.png"><img src="shots/b.JPG"><img src="shots/c.jpeg"><img src="shots/d.gif"><img src="shots/e.webp"><img src="shots/f.svg">',
+    "screens/shots/a.png": PNG, "screens/shots/b.JPG": JPEG, "screens/shots/c.jpeg": JPEG, "screens/shots/d.gif": GIF, "screens/shots/e.webp": WEBP,
+    "screens/shots/f.svg": '<?xml version="1.0"?>\n<SVG xmlns="http://www.w3.org/2000/svg"></SVG>',
+  });
+  const screen = prep(ok);
+  for (const k of [1, 2, 3, 4, 5, 6]) assert.ok(screen.html.includes(`assets/screens/s5-${k}.`), screen.html);
+});
+
+test("logo: a symlink, a path outside the project or a fake image is refused as the logo field", () => {
+  const story = { ...onlyHookAndEnd(), logo: "logo.png" };
+  const build = (base) => buildProject(story, "wide", { baseDir: base, outDir: tmpDir(), plan: planFilm(story) });
+  const outside = tmpDir();
+  writeFileSync(join(outside, "secret.png"), PNG);
+  const link = tmpDir();
+  symlinkSync(join(outside, "secret.png"), join(link, "logo.png"));
+  assert.throws(() => build(link), /^Error: logo: image is a symbolic link: logo\.png$/);
+  const fake = tmpDir();
+  writeFileSync(join(fake, "logo.png"), "not a png");
+  assert.throws(() => build(fake), /^Error: logo: image is not a PNG file: logo\.png$/);
+  const missing = tmpDir();
+  assert.throws(() => build(missing), /^Error: logo: image not found: logo\.png$/);
+  const up = { ...story, logo: "../secret.png" };
+  const nested = join(outside, "proj");
+  mkdirSync(nested);
+  assert.throws(() => buildProject(up, "wide", { baseDir: nested, outDir: tmpDir(), plan: planFilm(up) }), /logo: image is outside the project folder/);
 });

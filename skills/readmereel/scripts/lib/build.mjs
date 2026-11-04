@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, extname, join, resolve } from "node:path";
+import { closeSync, copyFileSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { planFilm } from "./plan.mjs";
 import { cssString, escAttr, sanitizeScreen } from "./sanitize.mjs";
@@ -61,24 +61,68 @@ function copyInto(projectDir, src, rel) {
   return rel;
 }
 
+// A story file the build reads or copies: a plain file (not a symlink) whose real path is inside baseDir. Errors name
+// the story field. Returns the real path.
+function storyFile(baseDir, file, field, what, shown) {
+  let stat;
+  try { stat = lstatSync(file); } catch { throw new Error(`${field}: ${what} not found: ${shown}`); }
+  if (stat.isSymbolicLink()) throw new Error(`${field}: ${what} is a symbolic link: ${shown}`);
+  if (!stat.isFile()) throw new Error(`${field}: ${what} is not a file: ${shown}`);
+  const real = realpathSync(file);
+  const rel = relative(realpathSync(baseDir), real);
+  if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+    throw new Error(`${field}: ${what} is outside the project folder: ${shown}`);
+  }
+  return real;
+}
+
+// What an image file must start with, by extension. SVG is text: it must contain an <svg> element.
+const IMAGE_KINDS = {
+  ".png": ["a PNG", (b) => b.length >= 8 && b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))],
+  ".jpg": ["a JPEG", (b) => b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff],
+  ".gif": ["a GIF", (b) => b.subarray(0, 4).toString("latin1") === "GIF8"],
+  ".webp": ["a WebP", (b) => b.subarray(0, 4).toString("latin1") === "RIFF" && b.subarray(8, 12).toString("latin1") === "WEBP"],
+  ".svg": ["an SVG", (b) => /<svg[\s>/]/i.test(b.toString("utf8"))],
+};
+IMAGE_KINDS[".jpeg"] = IMAGE_KINDS[".jpg"];
+const SVG_SNIFF = 64 * 1024;
+
+// Copies an image named in the story into the project: refused when it is a symlink, resolves outside baseDir, or is
+// not the kind of image its extension says.
+function copyImage(projectDir, baseDir, src, rel, field, shown) {
+  const real = storyFile(baseDir, src, field, "image", shown);
+  const kind = IMAGE_KINDS[extname(src).toLowerCase()];
+  if (!kind) throw new Error(`${field}: image is not a PNG, JPEG, GIF, WebP or SVG file: ${shown}`);
+  const fd = openSync(real, "r");
+  let head;
+  try {
+    const buf = Buffer.alloc(extname(src).toLowerCase() === ".svg" ? SVG_SNIFF : 16);
+    head = buf.subarray(0, readSync(fd, buf, 0, buf.length, 0));
+  } finally { closeSync(fd); }
+  if (!kind[1](head)) throw new Error(`${field}: image is not ${kind[0]} file: ${shown}`);
+  return copyInto(projectDir, real, rel);
+}
+
 // A rebuilt HTML screen for a `ui` scene: sanitized, its CSS scoped to .screen-<id>, its images copied into
-// assets/screens/ and every reference rewritten to the copy. `markup` is the screen inside its own .screen-<id> wrapper,
-// which clips and contains its paint so nothing in the screen can draw outside it (inline !important, so no rule in the
-// screen's CSS can undo it); `style` is the screen's CSS in an <style> element of its own, never merged into the
-// scene's stylesheet.
+// assets/screens/ and every reference rewritten to the copy. `markup` is the screen in two wrappers: the inner
+// .screen-<id> is what the screen's own root rules (html, body, :root) map to, so it may be styled, moved or scaled by
+// the screen; the outer .screen-frame-<id>, which no screen selector can reach, clips and contains its paint and can be
+// neither transformed, zoomed nor raised (inline !important, so no rule in the screen's CSS can undo it). `style` is the
+// screen's CSS in an <style> element of its own, never merged into the scene's stylesheet.
 export function prepareScreen(scene, id, { baseDir, projectDir, field = "html" }) {
   const file = resolve(baseDir, scene.html);
-  const { html: cleanHtml, css: cleanCss, images } = sanitizeScreen(readFileSync(file, "utf8"), `screen-${id}`);
+  const real = storyFile(baseDir, file, field, "the screen file", scene.html);
+  const { html: cleanHtml, css: cleanCss, images } = sanitizeScreen(readFileSync(real, "utf8"), `screen-${id}`);
   let html = cleanHtml;
   let css = cleanCss;
   images.forEach((path, k) => {
     const src = resolve(dirname(file), path);
-    if (!existsSync(src)) throw new Error(`${field}: image not found: ${path}`);
-    const rel = copyInto(projectDir, src, `assets/screens/${id}-${k + 1}${extname(path).toLowerCase()}`);
+    const rel = copyImage(projectDir, baseDir, src, `assets/screens/${id}-${k + 1}${extname(path).toLowerCase()}`, field, path);
     html = html.replaceAll(`="${escAttr(path)}"`, `="${rel}"`).replaceAll(escAttr(`url(${cssString(path)})`), escAttr(`url("${rel}")`));
     css = css.replaceAll(`url(${cssString(path)})`, `url("${rel}")`);
   });
-  const markup = `<div class="screen-${id}" style="position:relative!important;overflow:clip!important;contain:paint!important">${html}</div>`;
+  const frame = "position:relative!important;overflow:clip!important;contain:paint!important;transform:none!important;zoom:1!important;z-index:auto!important";
+  const markup = `<div class="screen-frame-${id}" style="${frame}"><div class="screen-${id}">${html}</div></div>`;
   const style = css ? `<style>${css}</style>` : "";
   return { html, css, markup, style };
 }
@@ -180,7 +224,7 @@ export function buildProject(story, layout, { baseDir, outDir, plan, sfxDir, tem
   mkdirSync(join(projectDir, "compositions"), { recursive: true });
   mkdirSync(join(projectDir, "assets"), { recursive: true });
   copyFileSync(join(templateDir, "hyperframes.json"), join(projectDir, "hyperframes.json"));
-  const logo = story.logo ? copyInto(projectDir, resolve(baseDir, story.logo), `assets/logo${extname(story.logo).toLowerCase()}`) : "";
+  const logo = story.logo ? copyImage(projectDir, baseDir, resolve(baseDir, story.logo), `assets/logo${extname(story.logo).toLowerCase()}`, "logo", story.logo) : "";
   const runtime = readFileSync(join(templateDir, "runtime.js"), "utf8");
   const ctx = { baseDir, projectDir, logo };
 
