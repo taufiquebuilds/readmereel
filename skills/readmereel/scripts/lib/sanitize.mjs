@@ -131,7 +131,7 @@ const NAMED_ENTITIES = {
   plus: "+", hyphen: "-", dash: "-", lowbar: "_", grave: "`", commat: "@", dollar: "$", ast: "*", midast: "*",
 };
 
-function decodeEntities(s) {
+export function decodeEntities(s) {
   // Single pass: "&amp;colon;" becomes the text "&colon;", never ":". Anything
   // not recognised stays as typed and is escaped again on the way out, so the
   // browser sees it as plain text.
@@ -252,7 +252,7 @@ function normaliseEscapes(s) {
 }
 
 // Full CSS unescape for a URL target.
-function cssUnescape(s) {
+export function cssUnescape(s) {
   return s.replace(/\\(?:([0-9a-fA-F]{1,6})[ \t\n\f]?|\n|([^]))/g, (m, hex, ch) => {
     if (hex) {
       const cp = parseInt(hex, 16);

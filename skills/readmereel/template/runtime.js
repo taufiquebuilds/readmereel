@@ -361,14 +361,19 @@ var RR = (function () {
         const target = S.q("[data-zoom-target]") || hero;
         const { x: cx, y: cy } = centre(target, R);
         const cam = S.q(".cam") || R;
-        tl.to(cam, { scale: 3, transformOrigin: cx + "px " + cy + "px", duration: 0.45, ease: "power3.in" }, end - 0.45);
+        // The dive starts at once (power2.in) and blurs as it speeds up: a filter, not HyperFrames' motion blur, which
+        // would redraw the camera above the layers in front of it (a ui scene's chip and caption, the disc).
+        tl.to(cam, { scale: 3, transformOrigin: cx + "px " + cy + "px", duration: 0.45, ease: "power2.in" }, end - 0.45);
+        tl.fromTo(cam, { filter: "blur(0px)" }, { filter: "blur(10px)", duration: 0.3, ease: "power2.in", immediateRender: false }, end - 0.3);
         const disc = target.getAttribute("data-zoom-disc");
         if (disc) {
           // The target's own colour floods the frame (the green-tick move): a disc the size and colour of the target,
-          // on it from end - 0.3 (the tick itself growing, as in the prototype), covers the frame by end - 0.06 and
+          // on it from end - 0.3 (the tick itself growing, as in the prototype), covers the frame by end - 0.09 and
           // turns into the next ground over end - 0.15 -> end - 0.045 (the next scene is shown from end - 0.045), so the
           // change of colour is seen, not cut.
           const r = Math.max(4, Math.max(target.offsetWidth, target.offsetHeight) / 2);
+          // Full size reaches the frame corner farthest from the disc's centre (by end - 0.09).
+          const far = Math.max(Math.hypot(cx, cy), Math.hypot(W - cx, cy), Math.hypot(cx, H - cy), Math.hypot(W - cx, H - cy));
           const dot = document.createElement("div");
           dot.className = "zoom-dot";
           dot.setAttribute("data-layout-ignore", "");
@@ -380,7 +385,7 @@ var RR = (function () {
           // redraw parts of it, sharp, above the disc.
           tl.set(cam, { attr: { "data-motion-blur": "off" } }, end - 0.3)
             .set(dot, { opacity: 1 }, end - 0.3)
-            .fromTo(dot, { scale: 1 }, { scale: Math.ceil((Math.hypot(W, H) / r) * 1.1), duration: 0.24, ease: "power3.in", immediateRender: false }, end - 0.3)
+            .fromTo(dot, { scale: 1 }, { scale: (far / r) * 1.02, duration: 0.21, ease: "power3.in", immediateRender: false }, end - 0.3)
             .fromTo(dot, { backgroundColor: disc }, { backgroundColor: D.nextGround || disc, duration: 0.105, ease: "power1.inOut", immediateRender: false }, end - 0.15);
           break;
         }

@@ -3,7 +3,7 @@ import { closeSync, constants, copyFileSync, existsSync, fstatSync, lstatSync, m
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { planFilm } from "./plan.mjs";
-import { MAX_IMAGES, sanitizeScreen, scopeCss } from "./sanitize.mjs";
+import { cssUnescape, decodeEntities, MAX_IMAGES, sanitizeScreen, scopeCss } from "./sanitize.mjs";
 import { imageSize, toV2 } from "./story.mjs";
 
 // Film plan -> HyperFrames project: a root index.html that mounts one sub-composition per scene (overlapping by the
@@ -153,8 +153,9 @@ export function isAnimated(data, ext) {
     return false;
   }
   if (ext === ".svg") {
-    const text = data.toString("utf8");
-    return /<\s*(?:[a-z]+:)?(?:animate|animateTransform|animateMotion|animateColor|set)\b/i.test(text) || /@keyframes|animation(?:-name)?\s*:/i.test(text);
+    // Judged decoded, as the browser reads it: entities, CSS escapes (\61nimation, @\6b eyframes) and comments.
+    const text = cssUnescape(decodeEntities(data.toString("utf8"))).replace(/\/\*[\s\S]*?\*\//g, "");
+    return /<\s*(?:[a-z]+:)?(?:animate|animateTransform|animateMotion|animateColor|set)\b/i.test(text) || /@(?:-[a-z]+-)?keyframes|animation(?:-name)?\s*:/i.test(text);
   }
   return false;
 }
@@ -199,11 +200,14 @@ export function prepareScreen(scene, id, { baseDir, projectDir, field = "html" }
     return rel;
   };
   const { html, css } = sanitizeScreen(readScreen(real, field, scene.html), `screen-${id}`, { mapImage });
-  // Inline data images (the sanitizer keeps base64 PNG, GIF, WebP and SVG ones) are checked like files.
+  // Inline data images (the sanitizer keeps base64 PNG, GIF, WebP and SVG ones) are checked like files, read as the
+  // browser reads them: entities and CSS escapes decoded, and whitespace inside the data dropped.
   const INLINE = { png: ".png", gif: ".gif", webp: ".webp", "svg+xml": ".svg" };
-  for (const m of `${html} ${css}`.matchAll(/data:image\/(png|gif|webp|svg\+xml)(;base64)?,([A-Za-z0-9+\/=%._~-]+)/gi)) {
+  const text = `${decodeEntities(html)} ${cssUnescape(css)}`;
+  for (const m of text.matchAll(/data:image\/(png|gif|webp|svg\+xml)(;base64)?,([^"')<>]+)/gi)) {
     let bytes;
-    try { bytes = m[2] ? Buffer.from(m[3], "base64") : Buffer.from(decodeURIComponent(m[3]), "utf8"); } catch { continue; }
+    const payload = m[3].replace(/\s+/g, "");
+    try { bytes = m[2] ? Buffer.from(payload, "base64") : Buffer.from(decodeURIComponent(payload), "utf8"); } catch { bytes = Buffer.from(payload, "utf8"); }
     if (isAnimated(bytes, INLINE[m[1].toLowerCase()])) throw ANIMATED(field, "an inline data image");
   }
   for (const [path, rel] of copies) copyImage(projectDir, baseDir, resolve(dirname(file), path), rel, field, path);

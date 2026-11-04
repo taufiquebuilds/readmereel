@@ -666,3 +666,25 @@ test("animated images are refused wherever they enter: screen images, inline dat
   writeFileSync(join(lbase, "logo.png"), APNG);
   assert.throws(() => buildProject(logo, "wide", { baseDir: lbase, outDir: tmpDir(), plan: planFilm(logo) }), /^Error: logo: image is animated/);
 });
+
+test("animated SVG is found through CSS escapes, entities and comments, and inline data images through spacing and entities", () => {
+  const svgs = {
+    // CSS escapes (the reviewer's a3.svg): \61nimation-name and @\6b eyframes.
+    "a3.svg": '<svg xmlns="http://www.w3.org/2000/svg"><style>rect{\\61nimation-name:s;animation-duration:1s}@\\6b eyframes s{to{opacity:0}}</style><rect/></svg>',
+    "esc.svg": '<svg xmlns="http://www.w3.org/2000/svg"><style>rect{\\61 nimation:s 1s}</style><rect/></svg>',
+    "ent.svg": '<svg xmlns="http://www.w3.org/2000/svg"><rect style="&#97;nimation:s 1s"/></svg>',
+    "cmt.svg": '<svg xmlns="http://www.w3.org/2000/svg"><style>rect{/*x*/animation/**/:s 1s}</style><rect/></svg>',
+    "tag.svg": '<svg xmlns="http://www.w3.org/2000/svg"><rect><&#x61;nimate/></rect><svg:animate/></svg>',
+  };
+  for (const [name, body] of Object.entries(svgs)) {
+    const base = screenBase({ "screens/home.html": `<img src="shots/${name}">`, [`screens/shots/${name}`]: body });
+    assert.throws(() => prep(base), /image is animated/, name);
+  }
+  // Inline data images: base64 broken over lines, or an SVG data URL with entities in its attribute.
+  const b64 = gifOf(2).toString("base64");
+  const spaced = screenBase({ "screens/home.html": `<img src="data:image/gif;base64,${b64.slice(0, 10)}\n  ${b64.slice(10)}">` });
+  assert.throws(() => prep(spaced), /image is animated \(a film frame must not depend on when it is drawn\): an inline data image/);
+  // (Only raster <img src> data images reach the build: the sanitizer drops data URLs in CSS and SVG data URLs.)
+  const entity = screenBase({ "screens/home.html": `<img src="data:image/gif;base64,&#x${b64.charCodeAt(0).toString(16)};${b64.slice(1)}">` });
+  assert.throws(() => prep(entity), /an inline data image/);
+});

@@ -181,8 +181,7 @@ test("ui zoom exit: chips and caption leave first, and a coloured tick becomes t
   assert.match(ui, /zt\.setAttribute\("data-zoom-disc", disc\)/);
   const runtime = readFileSync(join(TEMPLATE, "runtime.js"), "utf8");
   assert.match(runtime, /const disc = target\.getAttribute\("data-zoom-disc"\)/);
-  // The disc covers the frame by end - 0.06, and turns into the next ground visibly, over end - 0.15 -> end - 0.045.
-  assert.match(runtime, /scale: Math\.ceil\(\(Math\.hypot\(W, H\) \/ r\) \* 1\.1\), duration: 0\.24, ease: "power3\.in", immediateRender: false \}, end - 0\.3\)/);
+  // The disc turns into the next ground visibly, over end - 0.15 -> end - 0.045 (its growth: see the zoom dive test).
   assert.match(runtime, /backgroundColor: D\.nextGround \|\| disc, duration: 0\.105[^)]*\}, end - 0\.15\)/);
   // From the disc on, the camera opts out of motion blur (its redraw would land above the disc).
   assert.match(runtime, /tl\.set\(cam, \{ attr: \{ "data-motion-blur": "off" \} \}, end - 0\.3\)/);
@@ -216,4 +215,13 @@ test("ui: the camera never redraws over the chip or caption (it opts out of moti
   assert.match(ui, /<div class="ui-move" data-layout-allow-overflow data-motion-blur="off">/);
   // Statically: an attribute switched by the timeline is not something to rely on for the capture.
   assert.ok(!/"data-motion-blur": "on"/.test(ui));
+});
+
+test("zoom dive: the camera blurs as it dives (motion blur stays off), the dive starts sooner, the disc covers by end - 0.09", () => {
+  const runtime = readFileSync(join(TEMPLATE, "runtime.js"), "utf8");
+  assert.match(runtime, /tl\.fromTo\(cam, \{ filter: "blur\(0px\)" \}, \{ filter: "blur\(10px\)", duration: 0\.3, ease: "power2\.in", immediateRender: false \}, end - 0\.3\)/);
+  assert.match(runtime, /tl\.to\(cam, \{ scale: 3, transformOrigin: cx \+ "px " \+ cy \+ "px", duration: 0\.45, ease: "power2\.in" \}, end - 0\.45\)/);
+  // The disc's full size reaches the farthest corner from its centre, at end - 0.09.
+  assert.match(runtime, /const far = Math\.max\(Math\.hypot\(cx, cy\), Math\.hypot\(W - cx, cy\), Math\.hypot\(cx, H - cy\), Math\.hypot\(W - cx, H - cy\)\)/);
+  assert.match(runtime, /scale: \(far \/ r\) \* 1\.02, duration: 0\.21, ease: "power3\.in", immediateRender: false \}, end - 0\.3\)/);
 });
