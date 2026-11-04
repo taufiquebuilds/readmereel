@@ -539,3 +539,46 @@ test("round 3 E: escaped selectors and functional pseudo-classes still pass the 
   const out = clean(`<style>${css}</style><div class="md:flex">x</div>`);
   assert.equal(out.css, String.raw`.s .md\:flex{display:flex} .s .w-\[calc\(100\%-2rem\)\]{width:calc(100% - 2rem)} .s li:nth-child(2n+1):not(.x):is(.a,.b):where(p)>a:has(>img){color:rgb(1 2 3)} .s p::before{content:"\2022"}`);
 });
+
+// ---- round 4 ----
+
+test("round 4 K: SVG presentation attributes may only call allowlisted functions, never var() or env()", () => {
+  for (const html of [
+    `<svg style='--u:"http://h/x.png"'><rect width="9" height="9" mask="image-set(var(--u) 1x)"/></svg>`,
+    `<svg><g mask="-webkit-image-set(var(--w) 1x)"><rect width="9" height="9"/></g></svg>`,
+    `<style>.m{--u:"http://h/x.png"}</style><div class="m"><svg><rect width="9" height="9" mask="image-set(var(--u) 1x)"/></svg></div>`,
+    `<svg><rect width="9" height="9" mask="src(var(--s))"/></svg>`,
+    `<svg><rect width="9" height="9" fill="var(--f)"/></svg>`,
+    `<svg><rect width="9" height="9" fill="url(#g) var(--f)"/></svg>`,
+    `<svg><rect width="9" height="9" stroke="IMAGE-SET(var(--u) 1x)"/></svg>`,
+    `<svg><rect width="9" height="9" clip-path="image-set(var(--u) 1x)"/></svg>`,
+    `<svg><rect width="9" height="9" clip-path="cross-fade(var(--u),var(--u))"/></svg>`,
+    `<svg><rect width="9" height="9" transform="image-set(var(--u) 1x)"/></svg>`,
+    `<svg><rect width="image-set(var(--u) 1x)" height="9"/></svg>`,
+    `<svg><rect width="calc(var(--u))" height="env(x)" x="var(--x)"/></svg>`,
+    `<svg><circle r="9" fill="paint(x)" stroke="element(#a)"/></svg>`,
+  ]) {
+    const out = clean(html);
+    assert.ok(!/(?:image-set|cross-fade|src|var|env|paint|element)\s*\(/i.test(out.html), `${html} -> ${out.html}`);
+    assert.ok(!/http|h\/x/.test(out.html + out.css), `${html} -> ${out.html} ${out.css}`);
+  }
+});
+
+test("round 4 K: mask and clip-path are none or a local url(#id); paint keeps colours and local references", () => {
+  const out = clean(`<svg><mask id="m"></mask><rect width="9" height="9" mask="url(#m)" clip-path="none" fill="url(#g) red" stroke="rgb(1 2 3)"/><rect width="9" height="9" clip-path="circle(5px)" mask="url(#m) luminance" fill="hsl(1 2% 3%)" stroke="#fff" transform="translate(1,2) rotate(3)"/><rect width="calc(10px + 2%)" height="9" fill="none"/></svg>`);
+  assert.equal(out.html, '<svg><mask id="s-m"></mask><rect width="9" height="9" mask="url(#s-m)" clip-path="none" fill="url(#s-g) red" stroke="rgb(1 2 3)"/><rect width="9" height="9" fill="hsl(1 2% 3%)" stroke="#fff" transform="translate(1,2) rotate(3)"/><rect width="calc(10px + 2%)" height="9" fill="none"/></svg>');
+});
+
+test("round 4 K: custom properties may not hold a string that looks like an absolute URL", () => {
+  for (const value of [
+    '"http://h/x.png"', "'https://h/x.png'", '"//h/x.png"', '"\\\\\\\\h/x.png"', '"/\\\\h/x.png"', '"ht\\74p://h/x.png"', '" http://h/x.png"',
+    '"\\9http://h/x.png"', '"data:image/png;base64,AA"', '"javascript:x"', 'a "http://h/x.png"', '"HTTP://h"', '"\\68 ttp://h"',
+  ]) {
+    const out = clean(`<style>.a{color:red;--u:${value}}</style><div style="color:blue;--u:${value.replace(/"/g, "&quot;")}">k</div>`);
+    assert.match(out.css, /^\.s \.a\{color:red;?\}$/, value);
+    assert.match(out.html, /^<div style="color:blue;?">k<\/div>$/, value);
+    assert.ok(out.removed.some((r) => /URL in custom property --u|script or external-load value for --u/.test(r)), `${value}: ${out.removed}`);
+  }
+  const keep = clean(`<style>.a{--label:"Hello: world";--font:"Inter";--sep:"/";--path:"img/a.png";--x:1px;--tw-shadow:0 1px 2px rgb(0 0 0 / .1)}</style>`);
+  assert.equal(keep.css, '.s .a{--label:"Hello: world";--font:"Inter";--sep:"/";--path:"img/a.png";--x:1px;--tw-shadow:0 1px 2px rgb(0 0 0 / .1)}');
+});

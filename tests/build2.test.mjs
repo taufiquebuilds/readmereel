@@ -423,3 +423,18 @@ test("round 3 J: a hard-linked image or screen file is refused", () => {
   linkSync(join(outside, "secret.png"), join(logo, "logo.png"));
   assert.throws(() => buildProject(story, "wide", { baseDir: logo, outDir: tmpDir(), plan: planFilm(story) }), /^Error: logo: image has other hard links/);
 });
+
+// ---------- security round 4: files are opened once ----------
+
+test("round 4 L: an image over 25 MB is refused from the open file, before it is copied", () => {
+  const base = screenBase({ "screens/home.html": '<img src="shots/a.png">' });
+  const fd = openSync(join(base, "screens/shots/a.png"), "w");
+  writeFileSync(fd, PNG);
+  ftruncateSync(fd, 25 * 1024 * 1024 + 1);
+  closeSync(fd);
+  assert.throws(() => prep(base), { message: "scenes[4].html: image is over 25 MB: shots/a.png" });
+  const ok = screenBase({ "screens/home.html": '<img src="shots/a.png">', "screens/shots/a.png": PNG });
+  const project = tmpDir();
+  prepareScreen({ type: "ui", html: "screens/home.html" }, "s5", { baseDir: ok, projectDir: project, field: "scenes[4].html" });
+  assert.deepEqual(readFileSync(join(project, "assets/screens/s5-1.png")), PNG, "the copy is the bytes that were checked");
+});

@@ -87,7 +87,10 @@ const SVG_ATTRS = new Map([
 ].map((n) => [n.toLowerCase(), n]));
 // Presentation attributes are parsed as CSS: a plain character set leaves no room for escapes, comments or strings.
 const SVG_VALUE = /^[A-Za-z0-9 \t\n#%.,()+_-]*$/;
-const URL_ATTRS = new Set(["fill", "stroke", "clip-path", "mask"]);
+// Presentation attributes that point at another element: only `none` or url(#id) of this screen.
+const REFERENCE_ATTRS = new Set(["mask", "clip-path", "filter", "marker-start", "marker-mid", "marker-end"]);
+// Paint: colours, or url(#id) of this screen (with an optional fallback colour).
+const PAINT_ATTRS = new Set(["fill", "stroke"]);
 const FRAGMENT_URL = /url\(\s*#([A-Za-z0-9_-]+)\s*\)/gi;
 const ID = /^[A-Za-z0-9_-]+$/;
 // Names the scene templates and the runtime use; a screen may not wear them.
@@ -381,6 +384,22 @@ function parseUrlFunction(text, i) {
   return { ok: true, raw, end: k + 1 };
 }
 
+// True when a quoted string in the CSS text reads, decoded and trimmed the way a URL parser trims (C0 controls and
+// spaces at the ends, tabs and newlines anywhere), as a URL with a scheme ("http://", "data:") or as scheme-relative
+// ("//host", "\\host", "/\host"). A colon followed by a space ("Note: x") is not a URL with a special scheme.
+function urlLikeString(text) {
+  for (let i = 0; i < text.length;) {
+    const c = text[i];
+    if (c !== '"' && c !== "'") { i += c === "\\" ? 2 : 1; continue; }
+    const e = skipString(text, i);
+    const body = text.slice(i + 1, text[e - 1] === c && e - 1 > i ? e - 1 : e);
+    const probe = cssUnescape(body).replace(/^[\u0000-\u0020]+|[\u0000-\u0020]+$/g, "").replace(/[\t\n\r]/g, "");
+    if (/^[a-z][a-z0-9+.\-]*:(?![ \u0000-\u001f])|^[\\/]{2}/i.test(probe)) return true;
+    i = e;
+  }
+  return false;
+}
+
 const BANNED_PROPS = new Set(["behavior", "-ms-behavior", "-moz-binding", "-webkit-binding", "-o-link", "-o-link-source"]);
 const BANNED_VALUE = /javascript:|vbscript:|livescript:|expression\(|progid:|image-set\(|(?:^|[^a-z0-9])src\(|image\(|cross-fade\(|element\(|paint\(|attr\(/;
 
@@ -394,6 +413,9 @@ function sanitizeDeclaration(text, ctx) {
   if (BANNED_PROPS.has(prop)) { ctx.removed.push(`${prop} property in ${ctx.where}`); return ""; }
   const banned = (v) => BANNED_VALUE.test(v.toLowerCase().replace(/\s+/g, ""));
   if (banned(value) || banned(cssUnescape(value))) { ctx.removed.push(`script or external-load value for ${prop} in ${ctx.where}`); return ""; }
+  // A custom property is text until var() puts it somewhere, so a string in it that a URL parser would read as an
+  // absolute or scheme-relative URL is refused wherever it is.
+  if (prop.startsWith("--") && urlLikeString(value)) { ctx.removed.push(`URL in custom property ${prop} in ${ctx.where}`); return ""; }
   // Custom properties too: whatever var() can carry was checked where it was declared.
   const { found, escapedParen } = cssFunctions(value);
   if (escapedParen) { ctx.removed.push(`escaped bracket in the value of ${prop} in ${ctx.where}`); return ""; }
@@ -689,6 +711,27 @@ function cleanStyle(tag, value, ctx) {
   return cleaned;
 }
 
+// A presentation attribute value, which the browser parses as CSS. Returns { value } or { why }. The plain character
+// set leaves no room for escapes, comments or strings; every function must be on the allowlist; var() and env() are
+// refused (a custom property could feed them anything, such as image-set(var(--u) 1x) with --u an outside URL); url()
+// is kept only as url(#id) of this screen in paint, and reference attributes are `none` or url(#id) and nothing else.
+function presentationValue(lname, value, local) {
+  if (!SVG_VALUE.test(value)) return { why: "odd" };
+  if (REFERENCE_ATTRS.has(lname)) {
+    const v = value.trim();
+    if (/^none$/i.test(v)) return { value: "none" };
+    const m = /^url\(\s*#([A-Za-z0-9_-]+)\s*\)$/i.exec(v);
+    return m ? { value: `url(#${local(m[1])})` } : { why: "not none or url(#id) in" };
+  }
+  for (const f of cssFunctions(value).found) {
+    const lower = f.name.toLowerCase();
+    if (/^(?:-[a-z]+-)?(?:var|env)$/.test(lower)) return { why: `${lower}() in` };
+    if (lower === "url" ? !PAINT_ATTRS.has(lname) : !allowedFunction(f.name)) return { why: `${lower}() in` };
+  }
+  if (/url\s*\(/i.test(value.replace(FRAGMENT_URL, ""))) return { why: "url() in" };
+  return { value: value.replace(FRAGMENT_URL, (m, id) => `url(#${local(id)})`) };
+}
+
 // Keeps only allowlisted attributes, each with a checked value. Ids are prefixed with the scope (and so is every
 // same-document reference to them), so the screen can neither wear nor point at the scene's own ids.
 function cleanAttributes(tag, ns, attrs, ctx) {
@@ -728,7 +771,9 @@ function cleanAttributes(tag, ns, attrs, ctx) {
       continue;
     }
     if (lname === "width" || lname === "height" || lname === "colspan" || lname === "rowspan") {
-      if (SVG_VALUE.test(value) && !/url\s*\(/i.test(value)) out.push([lname, value]); else drop(`odd ${lname} value`);
+      // On SVG elements width and height are presentation attributes, so they get the same check.
+      const v = presentationValue(lname, value, local);
+      if (v.value !== undefined) out.push([lname, v.value]); else drop(`${v.why} ${lname} value`);
       continue;
     }
     if (GENERAL_ATTRS.has(lname) || DATA_ATTRS.has(lname) || /^aria-[a-z]+$/.test(lname)) {
@@ -758,14 +803,8 @@ function cleanAttributes(tag, ns, attrs, ctx) {
     }
     if (ns === "svg" && SVG_ATTRS.has(lname)) {
       const canonical = SVG_ATTRS.get(lname);
-      if (!SVG_VALUE.test(value)) { drop(`odd ${canonical} value`); continue; }
-      if (/url\s*\(/i.test(value)) {
-        // Only paint and clip/mask references to an element of this screen.
-        if (!URL_ATTRS.has(lname) || /url\s*\(/i.test(value.replace(FRAGMENT_URL, ""))) { drop(`url() in ${canonical}`); continue; }
-        out.push([canonical, value.replace(FRAGMENT_URL, (m, id) => `url(#${local(id)})`)]);
-        continue;
-      }
-      out.push([canonical, value]);
+      const v = presentationValue(lname, value, local);
+      if (v.value !== undefined) out.push([canonical, v.value]); else drop(`${v.why} ${canonical} value`);
       continue;
     }
     drop(`${lname} attribute`);

@@ -88,42 +88,49 @@ const IMAGE_KINDS = {
 IMAGE_KINDS[".jpeg"] = IMAGE_KINDS[".jpg"];
 const SVG_SNIFF = 64 * 1024;
 
-// Copies an image named in the story into the project: refused when it is a symlink, resolves outside baseDir, or is
-// not the kind of image its extension says.
+const IMAGE_MAX_BYTES = 25 * 1024 * 1024;
+
+// Reads a story file that storyFile has checked by path, from one descriptor opened once: non-blocking (a FIFO swapped
+// in after the check cannot hang the build) and without following a symlink, then checked again on the descriptor
+// itself (a plain file, no other hard link, at most maxBytes) and read from it. What is returned is what was checked.
+function readStoryFile(real, field, what, shown, maxBytes, limit) {
+  let fd;
+  try { fd = openSync(real, constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW); } catch {
+    throw new Error(`${field}: ${what} could not be opened: ${shown}`);
+  }
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) throw new Error(`${field}: ${what} is not a file: ${shown}`);
+    if (stat.nlink !== 1) throw new Error(`${field}: ${what} has other hard links (refused, it may be a file from outside the project): ${shown}`);
+    if (stat.size > maxBytes) throw new Error(`${field}: ${what} is over ${limit}: ${shown}`);
+    // One byte more than fstat says, to notice a file that changes while it is read.
+    const buf = Buffer.alloc(stat.size + 1);
+    let n = 0;
+    for (let r; n < buf.length && (r = readSync(fd, buf, n, buf.length - n, n)) > 0;) n += r;
+    if (n !== stat.size) throw new Error(`${field}: ${what} changed while it was read: ${shown}`);
+    return buf.subarray(0, n);
+  } finally { closeSync(fd); }
+}
+
+// Copies an image named in the story into the project: refused when it is a symlink, resolves outside baseDir, has
+// other hard links, is over 25 MB or is not the kind of image its extension says. The bytes checked are the bytes written.
 function copyImage(projectDir, baseDir, src, rel, field, shown) {
   const real = storyFile(baseDir, src, field, "image", shown);
   const kind = IMAGE_KINDS[extname(src).toLowerCase()];
   if (!kind) throw new Error(`${field}: image is not a PNG, JPEG, GIF, WebP or SVG file: ${shown}`);
-  // Non-blocking, so a file swapped for a FIFO after the check cannot hang the build.
-  const fd = openSync(real, constants.O_RDONLY | constants.O_NONBLOCK);
-  let head;
-  try {
-    const buf = Buffer.alloc(extname(src).toLowerCase() === ".svg" ? SVG_SNIFF : 16);
-    head = buf.subarray(0, readSync(fd, buf, 0, buf.length, 0));
-  } finally { closeSync(fd); }
+  const data = readStoryFile(real, field, "image", shown, IMAGE_MAX_BYTES, "25 MB");
+  const head = data.subarray(0, extname(src).toLowerCase() === ".svg" ? SVG_SNIFF : 16);
   if (!kind[1](head)) throw new Error(`${field}: image is not ${kind[0]} file: ${shown}`);
-  return copyInto(projectDir, real, rel);
+  mkdirSync(dirname(join(projectDir, rel)), { recursive: true });
+  writeFileSync(join(projectDir, rel), data);
+  return rel;
 }
 
 // The sanitizer refuses more than this too; the screen file is checked against it before it is read.
 const SCREEN_MAX_BYTES = 256 * 1024;
 
-// The screen file's text: opened without blocking, checked to be a plain file of at most 256 KB, and read no further
-// than one byte past the cap (in case it grew after the check).
-function readScreen(real, field, shown) {
-  const over = () => new Error(`${field}: the screen file is over 256 KB: ${shown}`);
-  const fd = openSync(real, constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW);
-  try {
-    const stat = fstatSync(fd);
-    if (!stat.isFile()) throw new Error(`${field}: the screen file is not a file: ${shown}`);
-    if (stat.size > SCREEN_MAX_BYTES) throw over();
-    const buf = Buffer.alloc(SCREEN_MAX_BYTES + 1);
-    let n = 0;
-    for (let r; n < buf.length && (r = readSync(fd, buf, n, buf.length - n, n)) > 0;) n += r;
-    if (n > SCREEN_MAX_BYTES) throw over();
-    return buf.toString("utf8", 0, n);
-  } finally { closeSync(fd); }
-}
+// The screen file's text, read once from a checked descriptor (see readStoryFile).
+const readScreen = (real, field, shown) => readStoryFile(real, field, "the screen file", shown, SCREEN_MAX_BYTES, "256 KB").toString("utf8");
 
 // A rebuilt HTML screen for a `ui` scene: sanitized, its CSS scoped to .screen-<id>, its images copied into
 // assets/screens/ and every reference rewritten to the copy. `markup` is the screen in two wrappers: the inner
