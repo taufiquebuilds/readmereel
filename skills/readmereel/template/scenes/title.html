@@ -25,8 +25,9 @@
 </style>
 <div id="root" data-composition-id="__ID__" data-width="__W__" data-height="__H__" data-layout="__LAYOUT__" data-style="__STYLE__">
   <div class="ground title-grid" aria-hidden="true" data-layout-ignore></div>
-  <div class="title-mark"><div class="title-badge" data-zoom-target>__LOGO__</div></div>
-  <div class="title-name hero" data-field="name">__NAME__</div>
+  <!-- The badge and name opt out of motion blur: their spring was redrawn above a carried-in hero. -->
+  <div class="title-mark"><div class="title-badge" data-zoom-target data-motion-blur="off">__LOGO__</div></div>
+  <div class="title-name hero" data-field="name" data-motion-blur="off">__NAME__</div>
   <div class="title-promise" data-field="scenes[__INDEX__].promise">__PROMISE__</div>
   <script type="application/json" class="scene-data">__DATA__</script>
 </div>
@@ -54,11 +55,11 @@ __RUNTIME__
   RR.fitLines(promise, wide ? 52 : 64, wide ? 1400 : 920, 3);
   const words = RR.words(promise);
   // The grid settles, the mark is on screen (half size) from the first frame and springs up, the name sharpens letter
-  // by letter from a ghost of itself, the promise blurs in word by word: then dead still.
+  // by letter from a half-strength ghost of itself (so its first frames hold ink in tall too), the promise blurs in word by word: then dead still.
   tl.fromTo(q(".title-grid"), { y: 120 }, { y: 0, duration: 0.8, ease: "expo.out" }, 0)
     .fromTo(q(".title-badge"), { scale: 0.5, rotation: -30 }, { scale: 1, rotation: 0, duration: 0.5, ease: "back.out(1.7)" }, tBadge)
     // Letters 0.035 s apart, but a long name still lands within 0.4 s.
-    .fromTo(qa(".title-name .l"), { opacity: 0.25, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.28, stagger: Math.min(0.035, 0.4 / Math.max(1, qa(".title-name .l").length - 1)), ease: "power2.out" }, tName);
+    .fromTo(qa(".title-name .l"), { opacity: 0.55, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.28, stagger: Math.min(0.035, 0.4 / Math.max(1, qa(".title-name .l").length - 1)), ease: "power2.out" }, tName);
   RR.blurIn(tl, words, tPromise, { stagger: 0.07, duration: 0.16 });
   S.done();
 })();

@@ -170,3 +170,30 @@ test("each scene knows the ground it enters from", () => {
   assert.equal(p.scenes[0].prevGround, null);
   for (let i = 1; i < p.scenes.length; i++) assert.equal(p.scenes[i].prevGround, p.scenes[i - 1].ground);
 });
+
+test("terminal: typing starts as the scene enters, and the longest highlighted line is held long enough to read after its pop", () => {
+  const near = (a, b, m) => assert.ok(Math.abs(a - b) < 1e-9, `${m}: ${a} vs ${b}`);
+  const scene = { type: "terminal", command: "repoheat dashboard --user ratatui", output: ["a", "b", "c", "d", "e", "f", "g", "✓ dashboard ready at http://localhost:4173"], highlight: [3, 7] };
+  const b = sceneBeats(scene, validStory2());
+  near(b.typeStart, 0.1, "typeStart");
+  near(b.outputStart, 0.1 + 1.6 + 0.15, "outputStart");
+  // Line 7 pops 0.3 s after it appears and lands 0.3 s later; then it holds, then the exit.
+  near(sceneLength(scene, validStory2()), b.outputStart + 0.075 * 7 + 0.6 + hold(scene.output[7]) + T + 0.12, "payoff hold");
+  // Without highlights (or with short ones) the old floor stands: the output plus 1.2 s and 0.6 s.
+  const plain = { ...scene, highlight: undefined };
+  near(sceneLength(plain, validStory2()), b.outputStart + 0.075 * 8 + 1.2 + 0.6, "floor");
+});
+
+test("terminal: entered by a carry, typing waits for the outgoing hero to clear (0.4 s), and the length follows", () => {
+  const scene = { type: "terminal", command: "npm test", output: ["ok"], highlight: [0] };
+  assert.equal(sceneBeats(scene, validStory2(), "carry").typeStart, 0.4);
+  assert.equal(sceneBeats(scene, validStory2(), "whip").typeStart, 0.1);
+  assert.ok(Math.abs(sceneLength(scene, validStory2(), "carry") - sceneLength(scene, validStory2(), "whip") - 0.3) < 1e-9);
+  // In a film, each terminal's beats match how it enters.
+  for (let seed = 0; seed < 40; seed++) {
+    const s = validStory2();
+    s.scenes = [s.scenes[0], { type: "compare", before: { label: "A", points: ["x " + seed] }, after: { label: "B", points: ["y"] } }, scene, s.scenes[1], s.scenes.at(-1)];
+    const p = planFilm(s);
+    assert.equal(p.scenes[2].beats.typeStart, p.scenes[2].in === "carry" ? 0.4 : 0.1);
+  }
+});

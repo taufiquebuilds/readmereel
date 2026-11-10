@@ -228,24 +228,30 @@ test("zoom dive: the camera blurs as it dives (motion blur stays off), the dive 
 
 // ---------- terminal and compare (Task 7) ----------
 
-test("terminal push: 1.15 about the focus line, the text block kept inside the 40 px margins, the line lifted towards the middle", () => {
-  // Wide: an 1150 px block fits at 1.15.
-  const wide = RR.termPush(1920, 1080, { x: 266, y: 260, w: 1150, h: 560 }, { x: 210, y: 480, w: 1500, h: 42 });
-  assert.equal(wide.scale, 1.15);
-  assert.equal(wide.oy, 501);
-  assert.ok(wide.ty > 0 && wide.ty <= 180, "lifted down towards the middle");
-  const on = (p, x) => p.ox + p.tx + p.scale * (x - p.ox);
-  assert.ok(on(wide, 266) >= 40 - 1e-9 && on(wide, 266 + 1150) <= 1880 + 1e-9);
-  // Tall: a 900 px block cannot take 1.15 inside 1000 px; the scale gives way, never the margins.
-  const tall = RR.termPush(1080, 1920, { x: 90, y: 700, w: 900, h: 700 }, { x: 50, y: 900, w: 980, h: 36 });
-  assert.ok(Math.abs(tall.scale - 1000 / 900) < 1e-9);
-  assert.ok(on(tall, 90) >= 40 - 1e-6 && on(tall, 990) <= 1040 + 1e-6);
-  // A short block keeps 1.15 and moves part of the way towards the centre, staying in the margins.
-  const short = RR.termPush(1080, 1920, { x: 90, y: 700, w: 400, h: 300 }, { x: 50, y: 760, w: 980, h: 36 });
-  assert.equal(short.scale, 1.15);
-  assert.ok(short.tx > 0 && on(short, 90) >= 40 - 1e-9);
-  // The lift is capped.
-  assert.equal(RR.termPush(1080, 1920, { x: 90, y: 100, w: 400, h: 50 }, { x: 50, y: 100, w: 980, h: 36 }).ty, 180);
+test("terminal push: a real push (up to 1.4) onto the highlighted lines, centred, their text kept inside the 40 px margins", () => {
+  const on = (p, x, y) => ({ x: p.ox + p.tx + p.scale * (x - p.ox), y: p.oy + p.ty + p.scale * (y - p.oy) });
+  // Wide: a 900 x 150 block takes the full 1.4 and is centred in the frame.
+  const wide = RR.termPush(1920, 1080, { x: 300, y: 500, w: 900, h: 150 });
+  assert.equal(wide.scale, 1.4);
+  assert.deepEqual([wide.ox, wide.oy, wide.tx, wide.ty], [750, 575, 210, -35]);
+  const c = on(wide, 750, 575);
+  assert.ok(Math.abs(c.x - 960) < 1e-9 && Math.abs(c.y - 540) < 1e-9);
+  // Tall: a 730 px block is pushed only as far as keeps it inside the margins (1000 / 730).
+  const tall = RR.termPush(1080, 1920, { x: 84, y: 900, w: 730, h: 90 });
+  assert.ok(Math.abs(tall.scale - 1000 / 730) < 1e-9);
+  assert.ok(on(tall, 84, 900).x >= 40 - 1e-9 && on(tall, 814, 900).x <= 1040 + 1e-9);
+  // A tall block is limited by the height too.
+  assert.ok(Math.abs(RR.termPush(1920, 1080, { x: 300, y: 100, w: 400, h: 800 }).scale - 1000 / 800) < 1e-9);
+  // With the text column: centred across when it fits at the push's scale...
+  const col = RR.termPush(1920, 1080, { x: 300, y: 500, w: 900, h: 150 }, 1.4, { x: 300, y: 200, w: 1000, h: 700 });
+  assert.ok(Math.abs(on(col, 300, 0).x + on(col, 1300, 0).x - 1920) < 1e-9, "column centred");
+  // ...else left-aligned 80 px in (tails cut), the block still inside the margins.
+  const left = RR.termPush(1080, 1920, { x: 84, y: 900, w: 600, h: 90 }, 1.4, { x: 84, y: 300, w: 912, h: 900 });
+  assert.equal(left.scale, 1.4);
+  assert.ok(Math.abs(on(left, 84, 0).x - 80) < 1e-9);
+  assert.ok(on(left, 684, 0).x <= 1040 + 1e-9);
+  // A custom ceiling.
+  assert.equal(RR.termPush(1920, 1080, { x: 300, y: 500, w: 100, h: 40 }, 1.3).scale, 1.3);
 });
 
 test("terminal: output lines are UI text, the camera layer opts out of motion blur, the push is at rest by end - 0.45", () => {
@@ -262,6 +268,18 @@ test("terminal: output lines are UI text, the camera layer opts out of motion bl
   assert.match(term, /outputStart \+ 0\.075 \* i/);
   // The dot grid stays at 9% ink.
   assert.match(term, /--dots: rgba\(255, 255, 255, 0\.09\)/);
+  // A full card from the first frame: 1600 x 880 (tall 1000 x 1560); command 48 px (tall 44), output 36 px (tall 32).
+  assert.match(term, /\.term \{[^}]*width: 1600px; height: 880px;/);
+  assert.match(term, /#root\[data-layout="tall"\] \.term \{ width: 1000px; height: 1560px; \}/);
+  assert.match(term, /RR\.fit\(cmdline, wide \? 48 : 44,/);
+  assert.match(term, /const OUT = wide \? 36 : 32;/);
+  // Long and CJK lines wrap inside the card in both layouts, and step down only if the card would overfill.
+  assert.match(term, /\.term-line \{[^}]*white-space: pre-wrap; overflow-wrap: anywhere;/);
+  assert.match(term, /for \(let px = OUT - 2; !fits\(\) && px >= 16; px -= 2\) sizeOut\(px\);/);
+  // Only real output lines are UI text for the gate; the folder segment is 28 px scene text.
+  assert.match(term, /<span class="term-seg">~\/__NAME__<\/span>/);
+  assert.match(term, /\.term-seg \{[^}]*font-size: 28px;/);
+  assert.match(term, /#root\[data-layout="tall"\] \.term-seg \{ font-size: 30px; \}/);
 });
 
 test("compare: the wipe clips the after panel (inset, 0.8 s power2.inOut), the edge rides it crisp, the lean-in is at rest by end - 0.45", () => {
@@ -274,6 +292,33 @@ test("compare: the wipe clips the after panel (inset, 0.8 s power2.inOut), the e
   assert.match(cmp, /class="ground cmp-grid" aria-hidden="true" data-layout-ignore/);
   assert.match(cmp, /duration: Math\.max\(0\.1, end - 0\.45 - hold0\), ease: "power1\.out" \}, hold0\)/);
   assert.match(cmp, /if \(D\.out === "zoom"\) tl\.to\(chipA, \{ opacity: 0, filter: "blur\(8px\)", duration: 0\.15, ease: "power2\.in" \}, end - 0\.45\)/);
+  // Points: 72 px (tall 60) in a left-aligned column across the panel, panels at least 760 (tall 1100) tall; the before
+  // panel has a ring against the ground.
+  assert.match(cmp, /const padX = wide \? 120 : 80, max = wide \? 72 : 60;/);
+  assert.match(cmp, /const minH = wide \? 760 : 1100;/);
+  assert.match(cmp, /\.cmp-before \{ box-shadow: [^}]*0 0 0 2px /);
   // The after label pops when the wipe passes 60%.
   assert.match(cmp, /if \(ease\(m\) < 0\.6\) lo = m; else hi = m;/);
+});
+
+test("carries: the title's and end card's badge and name never take motion blur (they were redrawn over a carried hero)", () => {
+  const title = scene("title.html");
+  assert.match(title, /<div class="title-badge" data-zoom-target data-motion-blur="off">/);
+  assert.match(title, /<div class="title-name hero" data-field="name" data-motion-blur="off">/);
+  const end = scene("end.html");
+  assert.match(end, /<div class="end-badge" data-motion-blur="off">/);
+  assert.match(end, /<div class="end-name" data-field="name" data-motion-blur="off">/);
+});
+
+test("the title's name sharpens from a half-strength ghost (its early frames carry ink in tall)", () => {
+  assert.match(scene("title.html"), /\{ opacity: 0\.55, filter: "blur\(6px\)" \}, \{ opacity: 1, filter: "blur\(0px\)"/);
+});
+
+test("counter: its content sits in a .cam that opts out of motion blur (the zoom dive is never redrawn over the dot)", () => {
+  assert.match(scene("counter.html"), /<div class="cam" data-motion-blur="off"><div class="counter-stage">/);
+});
+
+test("whip out: the leaving content starts already smeared (blur 6 px) and accelerates with power2.in", () => {
+  const runtime = readFileSync(join(TEMPLATE, "runtime.js"), "utf8");
+  assert.match(runtime, /\.fromTo\(els, \{ filter: "blur\(6px\)" \},\s*\{ \[wide \? "yPercent" : "xPercent"\]: -60, filter: "blur\(18px\)", duration: 0\.24, ease: "power2\.in", immediateRender: false \}, end - T\)/);
 });

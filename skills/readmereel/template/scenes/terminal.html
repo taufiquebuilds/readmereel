@@ -5,8 +5,10 @@
      that matters. Layers, back to front: an accent glow and a dot grid (.ground), the camera (.cam, the runtime's zoom
      element, never moved by this scene; inside it .term-move, this scene's own push, and the zoom target).
      The camera opts out of HyperFrames' motion blur (the zoom exit's dive blurs by a filter): a motion-blurred dive is
-     redrawn above the runtime's zoom dot. The terminal is always dark: #0d1015 on dark styles, #111418 on paper. Output lines are product UI (data-ui-text),
-     30 px wide and 26 px tall; the window's name in the title bar is chrome (data-layout-ignore). */
+     redrawn above the runtime's zoom dot. The terminal is always dark: #0d1015 on dark styles, #111418 on paper.
+     The card is the full 1600 x 880 (tall 1000 x 1560) from the first frame, content at the top as in a real terminal.
+     Output lines are product UI (data-ui-text, the only text that is): 36 px wide and 32 px tall, wrapping inside the
+     card, smaller only if many long (or CJK) lines would not fit. */
   #root { position: absolute; inset: 0; overflow: hidden; background: var(--ground); font-family: "Inter", sans-serif; }
   #root { --card: #0d1015; --bar: #3a3f48; --dots: rgba(255, 255, 255, 0.09); --glow-in: 56%; --glow-mid: 30%; }
   #root[data-style="paper"] { --card: #111418; --bar: #3a3f48; --dots: rgba(0, 0, 0, 0.09); }
@@ -18,46 +20,51 @@
     -webkit-mask-image: radial-gradient(ellipse 75% 75% at 50% 50%, #000 40%, transparent 100%); mask-image: radial-gradient(ellipse 75% 75% at 50% 50%, #000 40%, transparent 100%); }
   .cam { position: absolute; left: 0; top: 0; width: 100%; height: 100%; transform-origin: 0 0; }
   .term-move { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
-  .term { position: relative; width: 1500px; height: 760px; background: var(--card); border-radius: 24px; overflow: hidden; flex: none;
-    box-shadow: 0 50px 140px rgba(0, 0, 0, 0.55), 0 0 0 2px rgba(255, 255, 255, 0.2); font-family: "JetBrains Mono", monospace; color: #f5f6f8; }
+  .term { position: relative; width: 1600px; height: 880px; background: var(--card); border-radius: 24px; overflow: hidden; flex: none;
+    box-shadow: 0 50px 140px rgba(0, 0, 0, 0.55), 0 0 0 3px rgba(255, 255, 255, 0.34); font-family: "JetBrains Mono", monospace; color: #f5f6f8; }
   #root[data-tone="light"] .term { box-shadow: 0 50px 140px rgba(15, 23, 42, 0.32), 0 0 0 1px rgba(15, 23, 42, 0.2); }
-  #root[data-layout="tall"] .term { width: 980px; height: 1300px; }
+  #root[data-layout="tall"] .term { width: 1000px; height: 1560px; }
   .term-head { position: relative; z-index: 1; height: 54px; background: var(--bar); display: flex; align-items: center; gap: 12px; padding: 0 22px; }
   .term-head i { width: 15px; height: 15px; border-radius: 50%; display: block; flex: none; }
   .term-head i:nth-child(1) { background: #ff5f57; } .term-head i:nth-child(2) { background: #febc2e; } .term-head i:nth-child(3) { background: #28c840; }
   .term-name { position: absolute; left: 0; right: 0; top: 0; line-height: 54px; text-align: center; font-family: "Inter", sans-serif; font-weight: 600;
-    font-size: 22px; color: #e3e7ec; white-space: nowrap; pointer-events: none; }
-  .term-body { padding: 32px 0; }
-  #root[data-layout="tall"] .term-body { padding: 44px 0; }
+    font-size: 28px; color: #e3e7ec; white-space: nowrap; pointer-events: none; }
+  .term-body { padding: 40px 0; }
+  #root[data-layout="tall"] .term-body { padding: 48px 0; }
   /* The prompt's context line (the working folder, as a shell theme shows it): a segment on the bar's grey. */
-  .term-ctx { padding: 0 56px 14px; line-height: 1; }
-  #root[data-layout="tall"] .term-ctx { padding: 0 40px 14px; }
-  .term-seg { display: inline-block; font-size: 28px; line-height: 1.3; padding: 6px 18px; border-radius: 10px; background: var(--bar); color: #e3e7ec; white-space: nowrap; }
-  #root[data-layout="tall"] .term-seg { font-size: 26px; }
-  .term-cmdline { padding: 0 56px; font-size: 40px; line-height: 1.4; white-space: nowrap; font-weight: 700; }
-  #root[data-layout="tall"] .term-cmdline { padding: 0 40px; font-size: 38px; }
+  .term-ctx { padding: 0 64px 16px; line-height: 1; }
+  #root[data-layout="tall"] .term-ctx { padding: 0 44px 16px; }
+  #root[data-layout="tall"] .term-seg { font-size: 30px; }
+  .term-seg { display: inline-block; font-size: 28px; line-height: 1.3; padding: 8px 22px; border-radius: 10px; background: var(--bar); color: #e3e7ec; white-space: nowrap; }
+  .term-cmdline { padding: 0 64px; font-size: 48px; line-height: 1.36; white-space: nowrap; font-weight: 700; }
+  #root[data-layout="tall"] .term-cmdline { padding: 0 44px; font-size: 44px; }
   .term-p { color: var(--term-accent); margin-right: 0.6em; }
   .term-cursor { display: inline-block; width: 0.6em; height: 1.15em; vertical-align: -0.2em; background: var(--term-accent); margin-left: 0.08em; }
-  .term-out { margin-top: 20px; }
-  .term-line { position: relative; padding: 0 56px; font-size: 30px; line-height: 1.4; white-space: pre; color: #b4bcc8; }
-  #root[data-layout="tall"] .term-line { padding: 0 40px; font-size: 26px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .term-out { margin-top: 24px; }
+  /* Lines wrap inside the card (a long or CJK line never runs out of it); the script sets their size. */
+  .term-line { position: relative; padding: 0 64px; line-height: 1.36; white-space: pre-wrap; overflow-wrap: anywhere; color: #b4bcc8; }
+  #root[data-layout="tall"] .term-line { padding: 0 44px; }
   .term-text { position: relative; }
   .term-line.hl .term-text { color: #ffffff; font-weight: 700; }
   .term-bg { position: absolute; inset: 0; background: color-mix(in srgb, var(--term-accent) 18%, transparent); transform-origin: 0 50%; }
   .term-line .term-bar { position: absolute; left: 0; top: 0; bottom: 0; width: 6px; background: var(--term-accent); transform-origin: 50% 50%; }
-  .term-next { padding: 0 56px; font-size: 30px; line-height: 1.4; font-weight: 700; }
-  #root[data-layout="tall"] .term-next { padding: 0 40px; font-size: 26px; }
+  .term-next { padding: 0 64px; line-height: 1.36; font-weight: 700; }
+  #root[data-layout="tall"] .term-next { padding: 0 44px; }
   .term-target { position: absolute; pointer-events: none; }
+  /* .cam-rig carries the entrance (a whip slides it in on the CSS translate property); .cam inside it is the runtime's
+     zoom element. They must be two elements: GSAP folds an element's CSS translate into its transform the first time it
+     tweens that element's transform, so a zoom on the whip's own element froze the whip's slide. */
+  .cam-rig { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
 </style>
 <div id="root" data-composition-id="__ID__" data-width="__W__" data-height="__H__" data-layout="__LAYOUT__" data-style="__STYLE__">
   <div class="ground term-glow" aria-hidden="true" data-layout-ignore></div>
   <div class="ground term-dots" aria-hidden="true" data-layout-ignore></div>
-  <div class="cam" data-motion-blur="off">
+  <div class="cam-rig"><div class="cam" data-motion-blur="off">
     <div class="term-move" data-layout-allow-overflow data-motion-blur="off">
       <div class="term hero">
-        <div class="term-head"><i></i><i></i><i></i><span class="term-name" data-ui-text data-layout-ignore>__NAME__</span></div>
+        <div class="term-head"><i></i><i></i><i></i><span class="term-name">__NAME__</span></div>
         <div class="term-body">
-          <div class="term-ctx"><span class="term-seg" data-ui-text>~/__NAME__</span></div>
+          <div class="term-ctx"><span class="term-seg">~/__NAME__</span></div>
           <div class="term-cmdline"><span class="term-p">$</span><span class="term-cmd" data-field="scenes[__INDEX__].command">__COMMAND__</span><span class="term-cursor"></span></div>
           <div class="term-out">
         __LINES__
@@ -67,14 +74,14 @@
       </div>
     </div>
     <div class="term-target" data-zoom-target data-layout-ignore aria-hidden="true"></div>
-  </div>
+  </div></div>
   <script type="application/json" class="scene-data">__DATA__</script>
 </div>
 <script>
 __RUNTIME__
 (() => {
-  // The command types out, the output streams in line by line, highlighted lines pop an accent bar, then the camera
-  // pushes in on the first highlighted line (or the last line) and holds, at rest by end - 0.45.
+  // The command types out from the first frame, the output streams in line by line, highlighted lines pop an accent
+  // bar, then the camera pushes in (up to 1.4) onto the highlighted lines and holds, at rest by end - 0.45.
   const S = RR.scene("__ID__");
   const { tl, R, D, q, qa, W, H, wide } = S;
   const { typeStart, outputStart } = D.beats;
@@ -87,41 +94,47 @@ __RUNTIME__
   // ---------- measure first (before any tween touches layout) ----------
   const cmdline = q(".term-cmdline");
   const cmd = q(".term-cmd");
-  const pad = wide ? 56 : 40;
+  const pad = wide ? 64 : 44;
   // The command line fits the card on one line (never below 28 px).
-  RR.fit(cmdline, wide ? 40 : 38, card.offsetWidth - 2 * pad - 30, 0.6);
+  RR.fit(cmdline, wide ? 48 : 44, card.offsetWidth - 2 * pad - 36, 0.6);
   const lines = qa(".term-line");
   const next = q(".term-next");
-  // The card is 1500 x 760 (tall 980 x 1300) at most and hugs its content (never below 460 / 760 px tall), so a short
-  // run does not sit in a mostly empty window. Twelve long lines can fill it: the next prompt only shows if it fits.
   const body = q(".term-body");
-  const MAXH = wide ? 760 : 1300, MINH = wide ? 460 : 760;
-  const showNext = body.offsetTop + body.offsetHeight <= MAXH;
+  // Output at 36 px (tall 32). Twelve long lines (or CJK ones, a full em wide) can overfill the card: the next prompt
+  // goes first, then the lines step down 2 px at a time until they fit.
+  const OUT = wide ? 36 : 32;
+  const sizeOut = (px) => lines.concat([next]).forEach((el) => { el.style.fontSize = px + "px"; });
+  const fits = () => body.offsetTop + body.offsetHeight <= card.offsetHeight;
+  sizeOut(OUT);
+  const showNext = fits();
   if (!showNext) next.style.display = "none";
-  card.style.height = Math.max(MINH, Math.min(MAXH, body.offsetTop + body.offsetHeight + 8)) + "px";
-  // The line the camera pushes in on: the first highlighted line, else the last line.
-  const focus = q(".term-line.hl") || lines.at(-1);
-  // Frame rects from layout (nothing is transformed yet), in the root's own px.
+  for (let px = OUT - 2; !fits() && px >= 16; px -= 2) sizeOut(px);
+  // Frame rects from layout (nothing is transformed yet), in the root's own px; text measured as it shows.
   const rr = R.getBoundingClientRect();
   const k = W / (rr.width || W);
   const rect = (el) => { const r = el.getBoundingClientRect(); return { x: (r.left - rr.left) * k, y: (r.top - rr.top) * k, w: r.width * k, h: r.height * k }; };
-  const lineR = rect(focus);
-  const textR = rect(focus.querySelector(".term-text"));
-  // (inline: its box is the text itself)
-  // The push (RR.termPush): up to 1.15 towards the line, the text block (the command and every output line) kept
-  // inside the side margins, the line lifted part of the way towards the frame's middle.
   const range = document.createRange();
-  const inked = (el) => { range.selectNodeContents(el); const r = range.getBoundingClientRect(); return { x: (r.left - rr.left) * k, y: (r.top - rr.top) * k, w: r.width * k, h: r.height * k }; };
-  const texts = [cmdline].concat(lines.map((l) => l.querySelector(".term-text"))).map(inked);
-  const bx0 = Math.min(...texts.map((t) => t.x)), bx1 = Math.max(...texts.map((t) => t.x + t.w));
-  const by0 = Math.min(...texts.map((t) => t.y)), by1 = Math.max(...texts.map((t) => t.y + t.h));
-  const P = RR.termPush(W, H, { x: bx0, y: by0, w: bx1 - bx0, h: by1 - by0 }, lineR);
+  const inked = (el) => { range.selectNodeContents(el); return rect(range); };
+  const unite = (rs) => { const x0 = Math.min(...rs.map((r) => r.x)), y0 = Math.min(...rs.map((r) => r.y)); return { x: x0, y: y0, w: Math.max(...rs.map((r) => r.x + r.w)) - x0, h: Math.max(...rs.map((r) => r.y + r.h)) - y0 }; };
+  // The push (RR.termPush): onto the highlighted lines' text, up to 1.4 and never so far that it leaves the margins;
+  // down, the lines centred; across, the whole text column centred, or left-aligned 80 px in when it is too wide. Lines too wide for a real push (under 1.3) give way to the first highlighted line alone; without
+  // highlights the push goes to the last line.
+  const hls = qa(".term-line.hl");
+  const focus = hls[0] || lines.at(-1);
+  const textOf = (l) => inked(l.querySelector(".term-text"));
+  const column = unite([inked(cmdline)].concat(lines.map(textOf)));
+  let P = RR.termPush(W, H, unite((hls.length ? hls : [focus]).map(textOf)), 1.4, column);
+  if (P.scale < 1.3 && hls.length > 1) {
+    const one = RR.termPush(W, H, textOf(focus), 1.4, column);
+    if (one.scale > P.scale) P = one;
+  }
   const { ox, oy, tx, ty } = P, PUSH = P.scale;
   const onScreen = (x, y) => ({ x: ox + tx + PUSH * (x - ox), y: oy + ty + PUSH * (y - oy) });
-  // The zoom target: an untransformed box where the line's text rests after the push (the runtime measures the dive
-  // point from layout).
-  const c = onScreen(textR.x + textR.w / 2, lineR.y + lineR.h / 2);
-  const zs = Math.min(240, Math.max(60, PUSH * Math.max(Math.min(textR.w, 600), lineR.h)));
+  // The zoom target: an untransformed box where the first highlighted line's text rests after the push (the runtime
+  // measures the dive point from layout).
+  const textR = textOf(focus);
+  const c = onScreen(textR.x + textR.w / 2, textR.y + textR.h / 2);
+  const zs = Math.min(240, Math.max(60, PUSH * Math.max(Math.min(textR.w, 600), textR.h)));
   Object.assign(q(".term-target").style, { left: c.x - zs / 2 + "px", top: c.y - zs / 2 + "px", width: zs + "px", height: zs + "px" });
   // The glow sits behind the card.
   const cr = rect(card);

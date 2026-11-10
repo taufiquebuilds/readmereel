@@ -29,7 +29,8 @@ function endTyping(story) {
   return 0.03 * String(story.install ?? "").length;
 }
 
-export function sceneBeats(scene, story = {}) {
+// `entering` is the transition the scene comes in by (null for the first scene, or when not known yet).
+export function sceneBeats(scene, story = {}, entering = null) {
   switch (scene.type) {
     case "hook": {
       const lines = scene.lines ?? [];
@@ -47,7 +48,9 @@ export function sceneBeats(scene, story = {}) {
       return { focusStarts, stateTimes, captionAt };
     }
     case "terminal": {
-      const typeStart = 0.35;
+      // Typing starts as the scene enters (the card is on screen from the first frame); under a carry, once the
+      // outgoing hero has gone (until then it covers the card, and the typed text would read through it).
+      const typeStart = entering === "carry" ? 0.4 : 0.1;
       const typing = Math.min(1.6, 0.05 * String(scene.command ?? "").length);
       return { typeStart, outputStart: typeStart + typing + 0.15 };
     }
@@ -76,8 +79,8 @@ export function sceneBeats(scene, story = {}) {
   }
 }
 
-export function sceneLength(scene, story = {}) {
-  const b = sceneBeats(scene, story);
+export function sceneLength(scene, story = {}, entering = null) {
+  const b = sceneBeats(scene, story, entering);
   switch (scene.type) {
     case "hook": {
       const lines = scene.lines ?? [];
@@ -88,8 +91,14 @@ export function sceneLength(scene, story = {}) {
       return 0.8 + 0.07 * Math.max(0, words(scene.promise) - 1) + 0.16 + hold(scene.promise) + EXIT;
     case "ui":
       return b.captionAt + hold(scene.caption ?? "") + 0.35;
-    case "terminal":
-      return b.outputStart + 0.075 * (scene.output ?? []).length + 1.2 + 0.6;
+    case "terminal": {
+      // The output plus 1.8 s, and at least long enough that every highlighted line, once its accent pop has landed
+      // (0.6 s after it appears), holds for its words before the exit.
+      const out = scene.output ?? [];
+      const floor = b.outputStart + 0.075 * out.length + 1.2 + 0.6;
+      const reads = (scene.highlight ?? []).filter((k) => out[k] !== undefined).map((k) => b.outputStart + 0.075 * k + 0.6 + hold(out[k]) + EXIT);
+      return Math.max(floor, ...reads);
+    }
     case "counter": {
       const items = scene.items ?? [];
       const longest = Math.max(...items.map((it) => hold(`${it.label} ${it.note ?? ""}`)));
@@ -214,7 +223,13 @@ export function pickTransitions(scenes, grounds, seed) {
 export function planFilm(story) {
   const scenes = story.scenes;
   const n = scenes.length;
-  let lengths = scenes.map((scene) => sceneLength(scene, story));
+  const style = story.style ?? "midnight";
+  const accent = story.accent ?? DEFAULT_ACCENT;
+  const grounds = GROUNDS(style, accent);
+  // Transitions first: a scene's beats (and so its length) can depend on how it enters.
+  const kinds = pickTransitions(scenes, grounds, JSON.stringify(scenes));
+  const entering = (i) => (i === 0 ? null : kinds[i - 1]);
+  let lengths = scenes.map((scene, i) => sceneLength(scene, story, entering(i)));
   const raw = lengths.reduce((a, b) => a + b, 0) - T * (n - 1);
   if (raw > MAX_FILM) {
     let longest = 0;
@@ -225,11 +240,6 @@ export function planFilm(story) {
     const extra = (MIN_FILM - raw) / n;
     lengths = lengths.map((len) => len + extra);
   }
-
-  const style = story.style ?? "midnight";
-  const accent = story.accent ?? DEFAULT_ACCENT;
-  const grounds = GROUNDS(style, accent);
-  const kinds = pickTransitions(scenes, grounds, JSON.stringify(scenes));
 
   const planned = [];
   let start = 0;
@@ -251,7 +261,7 @@ export function planFilm(story) {
       ground: grounds[type],
       prevGround: i === 0 ? null : grounds[scenes[i - 1].type],
       nextGround: i === n - 1 ? null : grounds[scenes[i + 1].type],
-      beats: sceneBeats(scene, story),
+      beats: sceneBeats(scene, story, entering(i)),
       data,
     });
     // Each start comes from the rounded previous scene, so rounding error never compounds.

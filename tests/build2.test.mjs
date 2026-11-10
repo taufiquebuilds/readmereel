@@ -93,7 +93,7 @@ test("text slots are HTML-escaped and immune to replacement patterns", () => {
   assert.ok(hook.includes('data-field="scenes[0].lines[1]">Pay $$$ less</div>'));
   assert.ok(hook.includes('data-field="scenes[0].lines[2]">save $&amp; $1 more</div>'));
   const end = readFileSync(join(dir, "compositions/s5-end.html"), "utf8");
-  assert.ok(end.includes('data-field="name">it&#39;s &amp; co</div>'));
+  assert.ok(end.includes('data-field="name" data-motion-blur="off">it&#39;s &amp; co</div>'));
   assert.ok(end.includes('data-field="install">npx a@1 &amp;&amp; echo &quot;$&#39;&quot;</span>'));
   assert.ok(end.includes('data-field="url">github.com/taufiquebuilds/agencyrecap</div>'));
   assert.ok(!/__[A-Z]+__/.test(hook) && !/__[A-Z]+__/.test(end));
@@ -135,10 +135,10 @@ test("the end card shows the logo when there is one, else a glyph", () => {
   const story = { ...onlyHookAndEnd(), logo: "logo.svg" };
   const dir = buildProject(story, "wide", { baseDir: base, outDir: tmpDir(), plan: planFilm(story) });
   assert.equal(readFileSync(join(dir, "assets/logo.svg"), "utf8"), "<svg/>");
-  assert.ok(readFileSync(join(dir, "compositions/s5-end.html"), "utf8").includes('<div class="end-badge"><img src="assets/logo.svg" alt=""></div>'));
+  assert.ok(readFileSync(join(dir, "compositions/s5-end.html"), "utf8").includes('<div class="end-badge" data-motion-blur="off"><img src="assets/logo.svg" alt=""></div>'));
   const bare = onlyHookAndEnd();
   const dir2 = buildProject(bare, "wide", { baseDir: tmpDir(), outDir: tmpDir(), plan: planFilm(bare) });
-  assert.ok(readFileSync(join(dir2, "compositions/s5-end.html"), "utf8").includes('<div class="end-badge"><i class="glyph"></i></div>'));
+  assert.ok(readFileSync(join(dir2, "compositions/s5-end.html"), "utf8").includes('<div class="end-badge" data-motion-blur="off"><i class="glyph"></i></div>'));
 });
 
 test("rebuilding replaces the old project", () => {
@@ -222,16 +222,16 @@ test("title: name, promise and badge are filled, escaped and mapped to their fie
   story.scenes[1].promise = "Reports that send $& themselves </script>";
   for (const layout of ["wide", "tall"]) {
     const html = sceneFile(story, layout, "s2", "title");
-    assert.ok(html.includes('<div class="title-name hero" data-field="name">it&#39;s &amp; &lt;co&gt;</div>'), "name");
+    assert.ok(html.includes('<div class="title-name hero" data-field="name" data-motion-blur="off">it&#39;s &amp; &lt;co&gt;</div>'), "name");
     assert.ok(html.includes('<div class="title-promise" data-field="scenes[1].promise">Reports that send $&amp; themselves &lt;/script&gt;</div>'), "promise");
-    assert.ok(html.includes('<div class="title-badge" data-zoom-target><i class="glyph"></i></div>'), "glyph badge without a logo");
+    assert.ok(html.includes('<div class="title-badge" data-zoom-target data-motion-blur="off"><i class="glyph"></i></div>'), "glyph badge without a logo");
     assert.ok(!/__[A-Z][A-Z0-9_]*__/.test(html), "no placeholders left");
     assert.equal(sceneData(html).data.promise, "Reports that send $& themselves </script>");
   }
   const base = tmpDir();
   writeFileSync(join(base, "logo.png"), PNG);
   const html = sceneFile({ ...story, logo: "logo.png" }, "wide", "s2", "title", { baseDir: base });
-  assert.ok(html.includes('<div class="title-badge" data-zoom-target><img src="assets/logo.png" alt=""></div>'));
+  assert.ok(html.includes('<div class="title-badge" data-zoom-target data-motion-blur="off"><img src="assets/logo.png" alt=""></div>'));
 });
 
 test("list: three items, each with its index and its own field", () => {
@@ -702,7 +702,7 @@ test("terminal: command, output lines and the window's name are filled, escaped 
   for (const layout of ["wide", "tall"]) {
     const html = sceneFile(termStory(), layout, "s3", "terminal");
     assert.ok(html.includes('<span class="term-cmd" data-field="scenes[2].command">repoheat dashboard --user &lt;me&gt; &amp;&amp; echo $&amp;</span>'), "command");
-    assert.ok(html.includes('<span class="term-name" data-ui-text data-layout-ignore>repo &amp; &lt;co&gt;</span>'), "name in the title bar");
+    assert.ok(html.includes('<span class="term-name">repo &amp; &lt;co&gt;</span>'), "name in the title bar");
     const lines = html.match(/<div class="term-line[^"]*" data-field="scenes\[2\]\.output\[\d+\]" data-ui-text>/g) ?? [];
     assert.equal(lines.length, 4, "one line per output line, marked as UI text");
     // Leading spaces are kept (the line is pre-formatted), the text is escaped.

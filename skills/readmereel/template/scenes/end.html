@@ -25,7 +25,8 @@
   #root[data-layout="tall"] .end-made { bottom: 150px; }
 </style>
 <div id="root" data-composition-id="__ID__" data-width="__W__" data-height="__H__" data-layout="__LAYOUT__" data-style="__STYLE__">
-  <div class="end-mark hero"><div class="end-badge">__LOGO__</div><div class="end-name" data-field="name">__NAME__</div></div>
+  <!-- The badge and name opt out of motion blur: their spring was redrawn above a carried-in hero. -->
+  <div class="end-mark hero"><div class="end-badge" data-motion-blur="off">__LOGO__</div><div class="end-name" data-field="name" data-motion-blur="off">__NAME__</div></div>
   <div class="end-cta"><span class="p">$</span><span class="end-cmd" data-field="install">__INSTALL__</span></div>
   <div class="end-star"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.8l3.1 6.6 7.2.9-5.3 5 1.4 7.1L12 17.9l-6.4 3.5L7 14.3l-5.3-5 7.2-.9z"/></svg>Star on GitHub</div>
   <div class="end-url" data-field="url">__URL__</div>
@@ -50,11 +51,12 @@ __RUNTIME__
   q(".end-cta").style.fontSize = cmd.style.fontSize;
   cmd.style.fontSize = "";
   RR.fit(q(".end-url"), wide ? 40 : 34, W * 0.86, 0.55, { wrap: true });
-  // The badge is on screen (half size) from the first frame, so the card never opens empty.
+  // The badge is on screen (half size) from the first frame, the name as a strong ghost and the pill and URL half
+  // there, so the card never opens empty (in tall too, where it is a small mark in a tall frame).
   tl.fromTo(q(".end-badge"), { scale: 0.5, rotation: -30 }, { scale: 1, rotation: 0, duration: 0.5, ease: "back.out(1.7)" }, tLogo)
     // Letters 0.035 s apart, but a long name still lands within 0.4 s.
-    .fromTo(qa(".end-name span"), { opacity: 0.5, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2, stagger: Math.min(0.035, 0.4 / Math.max(1, qa(".end-name span").length - 1)), ease: "power2.out" }, tName)
-    .fromTo([q(".end-url"), q(".end-star")], { opacity: 0.3, y: 20 }, { opacity: 1, y: 0, duration: 0.35, stagger: 0.08, ease: "expo.out" }, tUrl)
+    .fromTo(qa(".end-name span"), { opacity: 0.7, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2, stagger: Math.min(0.035, 0.4 / Math.max(1, qa(".end-name span").length - 1)), ease: "power2.out" }, tName)
+    .fromTo([q(".end-url"), q(".end-star")], { opacity: 0.55, y: 20 }, { opacity: 1, y: 0, duration: 0.35, stagger: 0.08, ease: "expo.out" }, tUrl)
     .fromTo(q(".end-cta"), { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.35, ease: "expo.out" }, tType - 0.1);
   RR.type(tl, cmd, tType, 0.03);
   if (D.data.endCard === false) q(".end-made").style.display = "none";

@@ -157,18 +157,22 @@ var RR = (function () {
   }
 
   // ---------- terminal push (pure geometry) ----------
-  // The terminal camera's push towards its focus line: scale up to 1.15 about the text block's centre (across) and the
-  // line's centre (down), never so far that the text block leaves the 40 px side margins; the block moves half way
-  // towards the frame's centre across, the line half way towards it down (at most 180 px). Rects in frame px at identity.
-  function termPush(W, H, block, line, max) {
+  // The terminal camera's push onto its focus block (the highlighted lines' text): scale up to `max` (1.4) about the
+  // block's centre, never so far that the block leaves the 40 px margins, the block's centre carried to the frame's
+  // middle down. Across, `column` (all the terminal's text, left-aligned) is centred when it fits at that scale;
+  // otherwise its left edge sits 80 px in, so lines are cut only at their tails (the card may crop, like ui's window).
+  // Rects in frame px at identity.
+  function termPush(W, H, block, max, column) {
     const SAFE = 40;
-    const scale = Math.min(max || 1.15, (W - 2 * SAFE) / Math.max(1, block.w));
-    const ox = block.x + block.w / 2, oy = line.y + line.h / 2;
-    const half = (scale * block.w) / 2;
-    const lo = SAFE - ox + half, hi = W - SAFE - ox - half;
-    const tx = Math.min(Math.max((W / 2 - ox) * 0.5, lo), Math.max(lo, hi));
-    const ty = Math.max(-180, Math.min(180, (H / 2 - oy) * 0.5));
-    return { scale, ox, oy, tx, ty };
+    const scale = Math.min(max || 1.4, (W - 2 * SAFE) / Math.max(1, block.w), (H - 2 * SAFE) / Math.max(1, block.h));
+    const ox = block.x + block.w / 2, oy = block.y + block.h / 2;
+    const on = (x) => ox + scale * (x - ox);
+    let tx = W / 2 - ox;
+    if (column) {
+      tx = column.w * scale <= W - 2 * SAFE ? W / 2 - on(column.x + column.w / 2) : 2 * SAFE - on(column.x);
+      tx = Math.min(Math.max(tx, SAFE - on(block.x)), W - SAFE - on(block.x + block.w));
+    }
+    return { scale, ox, oy, tx, ty: H / 2 - oy };
   }
 
   // ---------- ui camera (pure geometry: no DOM, so it is unit-tested) ----------
@@ -348,9 +352,11 @@ var RR = (function () {
         // scenes, so the leaving content opts out of it (its own blur filter smears it instead) and stays beneath the
         // wipe; it fades once the wipe has all but covered it.
         const els = content(S);
+        // It starts already smeared (6 px) and accelerates at once (power2.in), so no sharp strip of it is left
+        // showing beside the incoming wipe.
         tl.set(els, { attr: { "data-motion-blur": "off" } }, end - T - 0.05)
-          .fromTo(els, { filter: "blur(0px)" },
-            { [wide ? "yPercent" : "xPercent"]: -60, filter: "blur(18px)", duration: 0.24, ease: "power3.in", immediateRender: false }, end - T)
+          .fromTo(els, { filter: "blur(6px)" },
+            { [wide ? "yPercent" : "xPercent"]: -60, filter: "blur(18px)", duration: 0.24, ease: "power2.in", immediateRender: false }, end - T)
           .to(els, { opacity: 0, duration: 0.14, ease: "power1.in" }, end - T + 0.08);
         break;
       case "blur":

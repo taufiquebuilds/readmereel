@@ -48,17 +48,21 @@
   #root[data-layout="tall"] .ui-caption { bottom: 230px; font-size: 84px; text-wrap: balance; }
   .ui-caption .w { display: inline-block; }
   .ui-caption .acc { color: var(--accent-ink); }
+  /* .cam-rig carries the entrance (a whip slides it in on the CSS translate property); .cam inside it is the runtime's
+     zoom element. They must be two elements: GSAP folds an element's CSS translate into its transform the first time it
+     tweens that element's transform, so a zoom on the whip's own element froze the whip's slide. */
+  .cam-rig { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
 </style>
 __SCREEN_STYLE__
 <div id="root" data-composition-id="__ID__" data-width="__W__" data-height="__H__" data-layout="__LAYOUT__" data-style="__STYLE__">
   <div class="ground ui-grid" aria-hidden="true" data-layout-ignore></div>
-  <div class="cam">
+  <div class="cam-rig"><div class="cam">
     <div class="ui-move" data-layout-allow-overflow data-motion-blur="off"><div class="ui-place"><div class="ui-win hero">
       <div class="ui-chrome"><i></i><i></i><i></i><span class="ui-url" data-ui-text data-layout-ignore>__HOST__</span></div>
       <div class="ui-body">__SHOT____SCREEN__</div>
     </div></div></div>
     <div class="ui-target" data-zoom-target data-layout-ignore aria-hidden="true"></div>
-  </div>
+  </div></div>
   <div class="ui-chips" data-layout-allow-occlusion>
     __CHIPS__
   </div>

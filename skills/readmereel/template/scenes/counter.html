@@ -6,6 +6,9 @@
   #root[data-tone="light"] { --ink: #111418; --muted: #5b6470; --line: rgba(0, 0, 0, 0.12); }
   /* Content sits above the glow (positioned layers paint over static ones). */
   .counter-stage { position: relative; }
+  /* The runtime's zoom element: it fills the root and opts out of motion blur, so a zoom dive is never redrawn over
+     the zoom dot. */
+  .cam { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
   .counter-glow { position: absolute; inset: 0; pointer-events: none; }
   .counter-row { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; align-items: center; }
   #root[data-layout="tall"] .counter-row { grid-auto-flow: row; row-gap: 120px; }
@@ -19,12 +22,16 @@
   .counter-value { display: inline-block; font-variant-numeric: tabular-nums; text-align: center; }
   .counter-suffix { display: inline-block; font-size: 0.6em; margin-left: 0.06em; letter-spacing: -0.02em; }
   .counter-note { font-weight: 600; font-size: 36px; color: var(--accent-ink); white-space: nowrap; line-height: 1.2; }
+  /* .cam-rig carries the entrance (a whip slides it in on the CSS translate property); .cam inside it is the runtime's
+     zoom element. They must be two elements: GSAP folds an element's CSS translate into its transform the first time it
+     tweens that element's transform, so a zoom on the whip's own element froze the whip's slide. */
+  .cam-rig { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
 </style>
 <div id="root" data-composition-id="__ID__" data-width="__W__" data-height="__H__" data-layout="__LAYOUT__" data-style="__STYLE__">
   <div class="ground counter-glow" aria-hidden="true" data-layout-ignore></div>
-  <div class="counter-stage"><div class="counter-row">
+  <div class="cam-rig"><div class="cam" data-motion-blur="off"><div class="counter-stage"><div class="counter-row">
     __ITEMS__
-  </div></div>
+  </div></div></div></div>
   <script type="application/json" class="scene-data">__DATA__</script>
 </div>
 <script>

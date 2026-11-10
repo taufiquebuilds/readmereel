@@ -17,18 +17,19 @@
     background-size: 64px 64px; }
   .cam, .cmp-stage, .cmp-rise, .cmp-push { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
   .cmp-panel { position: absolute; border-radius: 18px; overflow: hidden; background: #ffffff; }
-  .cmp-before { box-shadow: 0 50px 140px rgba(15, 23, 42, 0.28), 0 0 0 1px rgba(15, 23, 42, 0.08); }
+  /* A 2 px ring keeps the white before panel apart from the light ground. */
+  .cmp-before { box-shadow: 0 50px 140px rgba(15, 23, 42, 0.28), 0 0 0 2px rgba(15, 23, 42, 0.16); }
   .cmp-after { position: absolute; border-radius: 18px; }
   .cmp-reveal { left: 0; top: 0; width: 100%; height: 100%; }
   .cmp-shot { position: absolute; inset: 0; background: #ffffff; }
   .cmp-img { display: block; width: 100%; height: 100%; object-fit: contain; }
   /* Points: before reads muted on white, after on the ink card with accent ticks. */
-  /* One column as wide as the widest point, centred in the panel; points left-aligned in it. */
-  .cmp-points { position: absolute; inset: 0; display: grid; grid-template-columns: max-content; align-content: center; justify-content: center; row-gap: 40px; padding: 130px 120px; }
-  #root[data-layout="tall"] .cmp-points { padding: 150px 64px; row-gap: 48px; }
-  .cmp-point { display: flex; align-items: flex-start; gap: 0.5em; font-weight: 700; font-size: 56px; line-height: 1.16; letter-spacing: -0.02em; }
-  #root[data-layout="tall"] .cmp-point { font-size: 48px; }
-  .cmp-point span { text-wrap: balance; }
+  /* One left-aligned column across the panel (120 px in from each side; tall 80), centred down it. */
+  .cmp-points { position: absolute; inset: 0; display: grid; grid-template-columns: 1fr; align-content: center; row-gap: 44px; padding: 140px 120px; }
+  #root[data-layout="tall"] .cmp-points { padding: 160px 80px; row-gap: 56px; }
+  .cmp-point { display: flex; align-items: flex-start; gap: 0.45em; font-weight: 700; font-size: 72px; line-height: 1.12; letter-spacing: -0.025em; }
+  #root[data-layout="tall"] .cmp-point { font-size: 60px; }
+  .cmp-point span { flex: 1; text-wrap: balance; }
   .cmp-mark { position: relative; flex: none; width: 0.72em; height: 0.72em; margin-top: 0.22em; border-radius: 50%; }
   .cmp-before .cmp-point { color: #5b6470; }
   .cmp-before .cmp-mark { border: 0.08em solid #a3aab5; box-sizing: border-box; }
@@ -50,10 +51,14 @@
   .cmp-knob::before { left: 9px; transform: rotate(45deg); }
   .cmp-knob::after { right: 9px; transform: rotate(-135deg); }
   #root[data-layout="tall"] .cmp-knob { transform: rotate(90deg); }
+  /* .cam-rig carries the entrance (a whip slides it in on the CSS translate property); .cam inside it is the runtime's
+     zoom element. They must be two elements: GSAP folds an element's CSS translate into its transform the first time it
+     tweens that element's transform, so a zoom on the whip's own element froze the whip's slide. */
+  .cam-rig { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
 </style>
 <div id="root" data-composition-id="__ID__" data-width="__W__" data-height="__H__" data-layout="__LAYOUT__" data-style="__STYLE__">
   <div class="ground cmp-grid" aria-hidden="true" data-layout-ignore></div>
-  <div class="cam" data-motion-blur="off"><div class="cmp-stage"><div class="cmp-rise"><div class="cmp-push">
+  <div class="cam-rig"><div class="cam" data-motion-blur="off"><div class="cmp-stage"><div class="cmp-rise"><div class="cmp-push">
     <div class="cmp-panel cmp-before" data-layout-allow-overlap>
       __BEFORE__
     </div>
@@ -63,7 +68,7 @@
       </div>
     </div>
     <div class="cmp-edge" aria-hidden="true" data-layout-ignore data-motion-blur="off"><i class="cmp-knob"></i></div>
-  </div></div></div></div>
+  </div></div></div></div></div>
   <script type="application/json" class="scene-data">__DATA__</script>
 </div>
 <script>
@@ -78,13 +83,13 @@ __RUNTIME__
 
   // ---------- measure first ----------
   // The panel, fitted inside the frame's action-safe box and centred: with an image, the image's shape (the after
-  // image's, else the before's); with points only, the full width. It is then as tall as its points need (each point
-  // at most two lines; padding leaves room for the chips), never shorter than the image shape or the minimum.
-  const box = wide ? { w: 1440, h: 860 } : { w: 1000, h: 1300 };
-  const minH = wide ? 560 : 720;
+  // image's, else the before's); with points only, the full width. With points it is as tall as they need (padding
+  // leaves room for the chips), never shorter than the image's shape or the points minimum.
+  const box = wide ? { w: 1440, h: 860 } : { w: 1000, h: 1500 };
+  const minH = wide ? 760 : 1100;
   const sz = data.sides || {};
   const shape = sz.after || sz.before;
-  let PW = box.w, PH = minH;
+  let PW = box.w, PH = 0;
   if (shape) {
     const a = shape.width / shape.height;
     PW = Math.round(Math.min(box.w, box.h * a));
@@ -97,23 +102,28 @@ __RUNTIME__
   const disc = RR.readable(data.accent, "#111418", 3);
   R.style.setProperty("--cmp-disc", disc);
   R.style.setProperty("--cmp-tick", RR.contrast("#111418", disc) > RR.contrast("#ffffff", disc) ? "#111418" : "#ffffff");
-  // Points: every point in both panels shares one size, the largest at which each takes at most two lines.
+  // Points: every point in both panels shares one size, the largest (72 px, tall 60) at which each takes at most two
+  // lines and the taller points block fits the panel's box. A panel with points is at least 760 px (tall 1100) tall.
   const pts = qa(".cmp-point span");
   if (pts.length) {
-    const padX = wide ? 120 : 64, max = wide ? 56 : 48;
-    const w = PW - 2 * padX - Math.round(max * 1.22);
-    const size = Math.min(...pts.map((el) => RR.fitLines(el, max, w, 2)));
-    pts.forEach((el) => { el.parentElement.style.fontSize = size + "px"; el.style.fontSize = ""; el.style.width = ""; });
-    // The tallest points block (measured in flow) sets the panel's height.
-    const need = Math.max(...qa(".cmp-points").map((b) => {
+    const padX = wide ? 120 : 80, max = wide ? 72 : 60;
+    const w = PW - 2 * padX - Math.round(max * 1.17);
+    let size = Math.min(...pts.map((el) => RR.fitLines(el, max, w, 2)));
+    pts.forEach((el) => { el.style.fontSize = ""; el.style.width = ""; el.style.maxWidth = ""; });
+    // The tallest points block, measured in flow.
+    const need = () => Math.max(...qa(".cmp-points").map((b) => {
       b.style.position = "static";
       const h = b.offsetHeight;
       b.style.position = "";
       return h;
     }));
-    PH = Math.round(Math.min(box.h, Math.max(PH, need)));
-    [before, after].forEach((el) => { el.style.height = PH + "px"; });
+    const setSize = (px) => qa(".cmp-point").forEach((el) => { el.style.fontSize = px + "px"; });
+    setSize(size);
+    while (need() > box.h && size > 28) setSize((size -= 2));
+    PH = Math.max(PH, minH, need());
   }
+  PH = Math.round(Math.min(box.h, PH || minH));
+  [before, after].forEach((el) => { el.style.height = PH + "px"; });
   const px = Math.round((W - PW) / 2), py = Math.round((H - PH) / 2);
   [before, after].forEach((el) => Object.assign(el.style, { left: px + "px", top: py + "px" }));
   // The wipe edge: a 6 px line across the panel's moving edge, with a knob at its middle.
