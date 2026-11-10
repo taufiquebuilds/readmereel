@@ -157,19 +157,23 @@ var RR = (function () {
   }
 
   // ---------- terminal push (pure geometry) ----------
-  // The terminal camera's push onto its focus block (the highlighted lines' text): scale up to `max` (1.4) about the
-  // block's centre, never so far that the block leaves the 40 px margins, the block's centre carried to the frame's
-  // middle down. Across, `column` (all the terminal's text, left-aligned) is centred when it fits at that scale;
-  // otherwise its left edge sits 80 px in, so lines are cut only at their tails (the card may crop, like ui's window).
+  // The terminal camera's push onto its focus block (the union of the highlighted lines' text): scale up to `max`
+  // (1.4), capped so the whole block (every highlighted line, whole) stays inside the 40 px margins; the block's centre
+  // carried to the frame's middle down. Across, `column` (all the terminal's text, left-aligned) is centred when it
+  // fits at that scale; otherwise its left edge sits 80 px in, so only the tails of other lines crop. A block too wide
+  // for a 1.15 push (a long payoff line in tall) still gets 1.15, on the column left-aligned 80 px in.
   // Rects in frame px at identity.
   function termPush(W, H, block, max, column) {
     const SAFE = 40;
-    const scale = Math.min(max || 1.4, (W - 2 * SAFE) / Math.max(1, block.w), (H - 2 * SAFE) / Math.max(1, block.h));
+    const cap = Math.min(max || 1.4, (W - 2 * SAFE) / Math.max(1, block.w), (H - 2 * SAFE) / Math.max(1, block.h));
+    const scale = Math.max(cap, 1.15);
     const ox = block.x + block.w / 2, oy = block.y + block.h / 2;
     const on = (x) => ox + scale * (x - ox);
-    let tx = W / 2 - ox;
-    if (column) {
-      tx = column.w * scale <= W - 2 * SAFE ? W / 2 - on(column.x + column.w / 2) : 2 * SAFE - on(column.x);
+    const col = column || block;
+    let tx;
+    if (cap < 1.15) tx = 2 * SAFE - on(col.x);
+    else {
+      tx = col.w * scale <= W - 2 * SAFE ? W / 2 - on(col.x + col.w / 2) : 2 * SAFE - on(col.x);
       tx = Math.min(Math.max(tx, SAFE - on(block.x)), W - SAFE - on(block.x + block.w));
     }
     return { scale, ox, oy, tx, ty: H / 2 - oy };
@@ -283,6 +287,13 @@ var RR = (function () {
     return { SAFE, geometry, rect, shot, clip, widen, clean, focus, backShot, back, aim };
   })();
 
+  // The scale at which a disc of radius r centred at (cx, cy) covers the whole W x H frame: its radius reaches the
+  // farthest corner, with 4% to spare (antialiasing at the edge).
+  function cover(W, H, cx, cy, r) {
+    const far = Math.max(Math.hypot(cx, cy), Math.hypot(W - cx, cy), Math.hypot(cx, H - cy), Math.hypot(W - cx, H - cy));
+    return (far / Math.max(1, r)) * 1.04;
+  }
+
   // ---------- transitions (built inside each scene; the next scene starts T before this one ends) ----------
   function content(S) { return S.qa(":scope > :not(.scene-data):not(.ground):not(script):not(style)"); }
   function transIn(S) {
@@ -393,8 +404,6 @@ var RR = (function () {
           // turns into the next ground over end - 0.15 -> end - 0.045 (the next scene is shown from end - 0.045), so the
           // change of colour is seen, not cut.
           const r = Math.max(4, Math.max(target.offsetWidth, target.offsetHeight) / 2);
-          // Full size reaches the frame corner farthest from the disc's centre (by end - 0.09).
-          const far = Math.max(Math.hypot(cx, cy), Math.hypot(W - cx, cy), Math.hypot(cx, H - cy), Math.hypot(W - cx, H - cy));
           const dot = document.createElement("div");
           dot.className = "zoom-dot";
           dot.setAttribute("data-layout-ignore", "");
@@ -406,27 +415,29 @@ var RR = (function () {
           // redraw parts of it, sharp, above the disc.
           tl.set(cam, { attr: { "data-motion-blur": "off" } }, end - 0.3)
             .set(dot, { opacity: 1 }, end - 0.3)
-            .fromTo(dot, { scale: 1 }, { scale: (far / r) * 1.02, duration: 0.21, ease: "power3.in", immediateRender: false }, end - 0.3)
+            .fromTo(dot, { scale: 1 }, { scale: cover(W, H, cx, cy, r), duration: 0.21, ease: "power3.in", immediateRender: false }, end - 0.3)
             .fromTo(dot, { backgroundColor: disc }, { backgroundColor: D.nextGround || disc, duration: 0.105, ease: "power1.inOut", immediateRender: false }, end - 0.15);
           break;
         }
         // Into the same ground a dot would only read as a hole: the camera dives and the next scene sharpens in.
         if (D.nextGround === D.ground) break;
         // The dot starts at 0.6 x the target's larger side and only once the camera is moving fast (end - 0.22, under
-        // its blur); it fades in over 0.06 s and grows past the frame's corners at once, so it reads as the next ground
-        // swallowing the target rather than a hole punched in it.
+        // its blur); it fades in over 0.06 s and grows past the frame's farthest corner by end - 0.09, so it reads as the
+        // next ground swallowing the target rather than a hole punched in it, and the last frames before the cut are
+        // fully covered. Crisp (no motion blur): a blurred fast-growing edge left the corners showing.
         const r = Math.max(30, Math.round(0.3 * Math.max(target.offsetWidth, target.offsetHeight)));
         const dot = document.createElement("div");
         dot.className = "zoom-dot";
         dot.setAttribute("data-layout-ignore", "");
+        dot.setAttribute("data-motion-blur", "off");
         Object.assign(dot.style, { position: "absolute", left: cx - r + "px", top: cy - r + "px", width: 2 * r + "px", height: 2 * r + "px", borderRadius: "50%", background: D.nextGround, opacity: "0", zIndex: "50", pointerEvents: "none" });
         R.appendChild(dot);
         tl.fromTo(dot, { opacity: 0 }, { opacity: 1, duration: 0.06, ease: "none", immediateRender: false }, end - 0.22)
-          .fromTo(dot, { scale: 1 }, { scale: Math.ceil((Math.hypot(W, H) / r) * 1.1), duration: 0.22, ease: "power2.in", immediateRender: false }, end - 0.22);
+          .fromTo(dot, { scale: 1 }, { scale: cover(W, H, cx, cy, r), duration: 0.13, ease: "power2.in", immediateRender: false }, end - 0.22);
         break;
       }
       default: break; // flood, or the last scene: hold
     }
   }
-  return { T, scene, words, blurIn, roll, rollFrom, decimals, numText, fit, fitLines, type, centre, readable, contrast, cam, termPush };
+  return { T, scene, words, blurIn, roll, rollFrom, decimals, numText, fit, fitLines, type, centre, readable, contrast, cam, termPush, cover };
 })();

@@ -221,9 +221,8 @@ test("zoom dive: the camera blurs as it dives (motion blur stays off), the dive 
   const runtime = readFileSync(join(TEMPLATE, "runtime.js"), "utf8");
   assert.match(runtime, /tl\.fromTo\(cam, \{ filter: "blur\(0px\)" \}, \{ filter: "blur\(10px\)", duration: 0\.3, ease: "power2\.in", immediateRender: false \}, end - 0\.3\)/);
   assert.match(runtime, /tl\.to\(cam, \{ scale: 3, transformOrigin: cx \+ "px " \+ cy \+ "px", duration: 0\.45, ease: "power2\.in" \}, end - 0\.45\)/);
-  // The disc's full size reaches the farthest corner from its centre, at end - 0.09.
-  assert.match(runtime, /const far = Math\.max\(Math\.hypot\(cx, cy\), Math\.hypot\(W - cx, cy\), Math\.hypot\(cx, H - cy\), Math\.hypot\(W - cx, H - cy\)\)/);
-  assert.match(runtime, /scale: \(far \/ r\) \* 1\.02, duration: 0\.21, ease: "power3\.in", immediateRender: false \}, end - 0\.3\)/);
+  // The disc's full size reaches the farthest corner from its centre, at end - 0.09 (RR.cover).
+  assert.match(runtime, /scale: cover\(W, H, cx, cy, r\), duration: 0\.21, ease: "power3\.in", immediateRender: false \}, end - 0\.3\)/);
 });
 
 // ---------- terminal and compare (Task 7) ----------
@@ -271,6 +270,7 @@ test("terminal: output lines are UI text, the camera layer opts out of motion bl
   // A full card from the first frame: 1600 x 880 (tall 1000 x 1560); command 48 px (tall 44), output 36 px (tall 32).
   assert.match(term, /\.term \{[^}]*width: 1600px; height: 880px;/);
   assert.match(term, /#root\[data-layout="tall"\] \.term \{ width: 1000px; height: 1560px; \}/);
+  assert.match(term, /if \(!wide\) card\.style\.height = Math\.max\(1100, Math\.min\(1560, body\.offsetTop \+ body\.offsetHeight \+ 24\)\) \+ "px";/);
   assert.match(term, /RR\.fit\(cmdline, wide \? 48 : 44,/);
   assert.match(term, /const OUT = wide \? 36 : 32;/);
   // Long and CJK lines wrap inside the card in both layouts, and step down only if the card would overfill.
@@ -321,4 +321,41 @@ test("counter: its content sits in a .cam that opts out of motion blur (the zoom
 test("whip out: the leaving content starts already smeared (blur 6 px) and accelerates with power2.in", () => {
   const runtime = readFileSync(join(TEMPLATE, "runtime.js"), "utf8");
   assert.match(runtime, /\.fromTo\(els, \{ filter: "blur\(6px\)" \},\s*\{ \[wide \? "yPercent" : "xPercent"\]: -60, filter: "blur\(18px\)", duration: 0\.24, ease: "power2\.in", immediateRender: false \}, end - T\)/);
+});
+
+test("floods cover the frame: every zoom dot and disc reaches past the farthest corner by end - 0.09, crisp", () => {
+  // RR.cover: the radius reaches the farthest corner from the centre, with a margin.
+  for (const [W, H] of [[1920, 1080], [1080, 1920]]) {
+    for (const [cx, cy] of [[0, 0], [W / 2, H / 2], [W * 0.9, H * 0.2], [W, H]]) {
+      const r = 37;
+      const far = Math.max(Math.hypot(cx, cy), Math.hypot(W - cx, cy), Math.hypot(cx, H - cy), Math.hypot(W - cx, H - cy));
+      assert.ok(RR.cover(W, H, cx, cy, r) * r >= far * 1.03, `${W}x${H} at ${cx},${cy}`);
+    }
+  }
+  const runtime = readFileSync(join(TEMPLATE, "runtime.js"), "utf8");
+  // The plain dot: from end - 0.22 over 0.13 s (full at end - 0.09), and out of motion blur like the disc.
+  assert.match(runtime, /\.fromTo\(dot, \{ scale: 1 \}, \{ scale: cover\(W, H, cx, cy, r\), duration: 0\.13, ease: "power2\.in", immediateRender: false \}, end - 0\.22\)/);
+  assert.equal((runtime.match(/dot\.setAttribute\("data-motion-blur", "off"\)/g) || []).length, 2);
+});
+
+test("terminal push: a long payoff line stays whole (the scale gives way), and below 1.15 the push is 1.15 on the column", () => {
+  const on = (p, x) => p.ox + p.tx + p.scale * (x - p.ox);
+  // Tall: "✓ dashboard ready at http://localhost:4173" (42 chars at 32 px, about 806 px) with a shorter highlight above.
+  const block = { x: 84, y: 700, w: 806, h: 300 };
+  const p = RR.termPush(1080, 1920, block, 1.4, { x: 84, y: 300, w: 912, h: 900 });
+  assert.ok(Math.abs(p.scale - 1000 / 806) < 1e-9);
+  assert.ok(on(p, 84) >= 40 - 1e-9 && on(p, 890) <= 1040 + 1e-9, "the payoff line is whole");
+  // A highlighted line as wide as the tall card's text (912 px): the cap (1.096) is under 1.15, so 1.15 on the column
+  // left-aligned 80 px in.
+  const wide = RR.termPush(1080, 1920, { x: 84, y: 700, w: 912, h: 80 }, 1.4, { x: 84, y: 300, w: 912, h: 900 });
+  assert.equal(wide.scale, 1.15);
+  assert.ok(Math.abs(on(wide, 84) - 80) < 1e-9);
+});
+
+test("every zoom source dives a .cam inside a .cam-rig (never #root: its blur rimmed the flood), out of motion blur", () => {
+  for (const file of ["title.html", "counter.html", "terminal.html", "compare.html"]) {
+    assert.match(scene(file), /<div class="cam-rig"><div class="cam" data-motion-blur="off">/, file);
+  }
+  // ui's camera layer (.ui-move) is out of motion blur; its .cam opts out once its disc is on (runtime).
+  assert.match(scene("ui.html"), /<div class="cam-rig"><div class="cam">/);
 });

@@ -22,13 +22,19 @@
   .title-promise .w { display: inline-block; }
   #root[data-layout="tall"] .title-name { margin-top: 64px; }
   #root[data-layout="tall"] .title-promise { margin-top: 52px; }
+  .cam-rig, .cam { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+  .cam { display: flex; flex-direction: column; align-items: center; justify-content: center; }
 </style>
 <div id="root" data-composition-id="__ID__" data-width="__W__" data-height="__H__" data-layout="__LAYOUT__" data-style="__STYLE__">
   <div class="ground title-grid" aria-hidden="true" data-layout-ignore></div>
   <!-- The badge and name opt out of motion blur: their spring was redrawn above a carried-in hero. -->
+  <!-- .cam is the runtime's zoom element (out of motion blur: the dive blurs by its own filter, and blurring #root
+       itself left a dark rim around the flood); .cam-rig takes the entrance. -->
+  <div class="cam-rig"><div class="cam" data-motion-blur="off">
   <div class="title-mark"><div class="title-badge" data-zoom-target data-motion-blur="off">__LOGO__</div></div>
   <div class="title-name hero" data-field="name" data-motion-blur="off">__NAME__</div>
   <div class="title-promise" data-field="scenes[__INDEX__].promise">__PROMISE__</div>
+  </div></div>
   <script type="application/json" class="scene-data">__DATA__</script>
 </div>
 <script>
