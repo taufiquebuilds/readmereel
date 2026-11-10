@@ -8,6 +8,8 @@ export { musicTag };
 export const SOUNDS = ["whoosh", "whoosh-short", "pop", "click-soft", "key-press", "impact-bass-1"];
 export const MUSIC_FEEL = "confident minimal pulse, 110–124 bpm, builds to a bright end";
 export const MUSIC_SKIPPED = "Music skipped: sign in to HeyGen (heygen auth login --oauth) or give a music file.";
+// The warning for a music file that is not there.
+export const musicNotFound = (music) => `Music skipped: ${music} not found.`;
 
 const CREDITS = `# Sound effects
 
@@ -65,7 +67,7 @@ export function resolveMusic(story, projectDir, { log, run, baseDir = process.cw
   if (music !== "heygen") {
     const src = resolve(baseDir, music);
     if (!existsSync(src)) {
-      warn(`Music skipped: ${music} not found.`);
+      warn(musicNotFound(music));
       return null;
     }
     mkdirSync(projectDir, { recursive: true });

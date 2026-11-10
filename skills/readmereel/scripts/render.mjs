@@ -7,7 +7,7 @@ import { GIF, makeGif } from "./lib/gif.mjs";
 import { checkProject, ensureBrowser, renderProject } from "./lib/hf.mjs";
 import { planFilm } from "./lib/plan.mjs";
 import { makeContactSheet, makePoster, sceneLabel } from "./lib/sheet.mjs";
-import { resolveEffects, resolveMusic } from "./lib/sound.mjs";
+import { MUSIC_SKIPPED, musicNotFound, resolveEffects, resolveMusic } from "./lib/sound.mjs";
 import { isV1, storyWarnings, toV2, validateStory } from "./lib/story.mjs";
 import { checkTools } from "./lib/tools.mjs";
 
@@ -79,7 +79,9 @@ export function main(argv = process.argv.slice(2), { cwd = process.cwd() } = {})
       sfxDir = resolveEffects(out(".sfx"), { log, warn: note });
     }
     const music = resolveMusic(story, out(".music"), { log, baseDir: cwd, warn: note });
-    if (!music && !notes.some((n) => n.startsWith("Music skipped"))) {
+    // No music, and no warning already says why: say how to add some.
+    const skipped = notes.includes(MUSIC_SKIPPED) || notes.includes(musicNotFound(story.music));
+    if (!music && !skipped) {
       notes.push(MUSIC_HINT);
       appendFileSync(log, `${MUSIC_HINT}\n`);
     }

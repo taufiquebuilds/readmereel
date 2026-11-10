@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { appendFileSync, mkdtempSync } from "node:fs";
+import { appendFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { gateProblems, loadProject } from "./gate.mjs";
@@ -29,9 +29,14 @@ function parseReport(stdout) {
 
 // npx runs from a private folder inside the temp dir, never inside the project: npm reads the nearest package.json and
 // .npmrc above its cwd. A shared /tmp is not safe either (/tmp/.npmrc, /tmp/node_modules), so make one folder per process.
+// The folder stays empty (npx caches elsewhere) and is removed when the process exits.
 let npxDir;
 function npxCwd() {
-  npxDir ??= mkdtempSync(join(tmpdir(), "readmereel-npx-"));
+  if (!npxDir) {
+    npxDir = mkdtempSync(join(tmpdir(), "readmereel-npx-"));
+    const made = npxDir;
+    process.once("exit", () => rmSync(made, { recursive: true, force: true }));
+  }
   return npxDir;
 }
 

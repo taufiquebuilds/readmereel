@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { buildProject } from "../skills/readmereel/scripts/lib/build.mjs";
 import { GIF } from "../skills/readmereel/scripts/lib/gif.mjs";
 import { checkProject, ensureBrowser } from "../skills/readmereel/scripts/lib/hf.mjs";
-import { planFilm } from "../skills/readmereel/scripts/lib/plan.mjs";
+import { planFilm, T } from "../skills/readmereel/scripts/lib/plan.mjs";
 import { framesOf, midFrame, POSTER_WIDTH, posterScene, sheetLayout, TILE } from "../skills/readmereel/scripts/lib/sheet.mjs";
 import { MUSIC_SKIPPED } from "../skills/readmereel/scripts/lib/sound.mjs";
 import { LIMITS, validateStory } from "../skills/readmereel/scripts/lib/story.mjs";
@@ -21,11 +21,11 @@ const RENDER = join(SKILL, "scripts/render.mjs");
 const FIXTURE = join(HERE, "fixtures/all-scenes");
 const MINUTE = 60_000;
 
-// A scratch folder removed when the test ends (kept on CI, or with KEEP_RENDERS=1, so a failed run can be looked at).
+// A scratch folder removed as soon as the test ends, renders being large (KEEP_RENDERS=1 keeps it to look at).
 function scratch(t) {
   const dir = tmpDir();
   t.after(() => {
-    if (!process.env.CI && !process.env.KEEP_RENDERS) rmSync(dir, { recursive: true, force: true });
+    if (!process.env.KEEP_RENDERS) rmSync(dir, { recursive: true, force: true });
   });
   return dir;
 }
@@ -118,14 +118,32 @@ function frameRows(video) {
   });
 }
 
+// Transitions that fill the frame with one colour on purpose (the zoom dives into a disc, the flood washes the frame),
+// and the window each may do it in: the overlap from the incoming scene's start, T long, plus a frame either side.
+const FLOODING = new Set(["zoom", "flood"]);
+const inFlood = (plan, t) => plan.scenes.some((s) => FLOODING.has(s.in) && t >= s.start - 1 / 30 && t <= s.start + T + 1 / 30);
+
+// The least ink a scene may show 0.15 s in: Tasks 5-7's 3% target, with one known exception. The counter's whip
+// entrance opens on its labels and "0" figures, small on a dark ground (2.4% wide, 3.0% tall in the all-scenes film);
+// it is Task 5's design and reads fine in motion, so it is held to 2% (under that, a scene opens on an empty frame).
+const MIN_INK = 3;
+const KNOWN_LOW_INK = { "counter whip": 2 };
+const inkFloor = (s) => KNOWN_LOW_INK[`${s.type} ${s.in}`] ?? MIN_INK;
+
 function metrics(rows, plan) {
   const blank = rows.filter((r) => r.range < 24);
   const near = rows.filter((r) => r.range >= 24 && r.ink < 1.5);
   const boundaries = plan.scenes.slice(1).map((s) => {
     const r = rows.find((x) => x.t >= s.start + 0.15 - 1e-6);
-    return { scene: `${s.id} ${s.type}`, in: s.in, ink: Number(r.ink.toFixed(1)), flood: r.range < 24 };
+    return { scene: `${s.id} ${s.type}`, in: s.in, ink: Number(r.ink.toFixed(1)), floor: inkFloor(s), flood: r.range < 24 };
   });
-  return { frames: rows.length, blank: blank.map((r) => r.t.toFixed(3)), nearEmpty: near.map((r) => r.t.toFixed(3)), boundaries };
+  return {
+    frames: rows.length,
+    blank: blank.map((r) => r.t.toFixed(3)),
+    blankOutsideFloods: blank.filter((r) => !inFlood(plan, r.t)).map((r) => r.t.toFixed(3)),
+    nearEmpty: near.map((r) => r.t.toFixed(3)),
+    boundaries,
+  };
 }
 
 // ---------- the all-scenes film ----------
@@ -183,8 +201,10 @@ test("the all-scenes film renders in both sizes, with its GIF, poster, contact s
     assert.equal(m.frames, Math.round(plan.duration * 30), `${name} frame count`);
     assert.ok(m.nearEmpty.length <= 3, `${name}: near-empty frames at ${m.nearEmpty.join(", ")}`);
     assert.ok(m.blank.length <= 4, `${name}: blank frames at ${m.blank.join(", ")}`);
-    // Tasks 5-7 aimed at 3% and flagged anything lower for a look; under 2% a scene opens on a nearly empty frame.
-    for (const b of m.boundaries) if (!b.flood) assert.ok(b.ink >= 2, `${name}: ${b.scene} (in by ${b.in}) has ${b.ink}% ink at +0.15 s`);
+    assert.deepEqual(m.blankOutsideFloods, [], `${name}: blank frames outside a zoom or flood transition`);
+    for (const b of m.boundaries) {
+      if (!b.flood) assert.ok(b.ink >= b.floor, `${name}: ${b.scene} (in by ${b.in}) has ${b.ink}% ink at +0.15 s, under ${b.floor}%`);
+    }
   }
 });
 

@@ -1,9 +1,21 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { after } from "node:test";
+
+// Every folder tmpDir made in this test file, removed when the file's tests end (KEEP_RENDERS=1 keeps them to look
+// at). Only these folders: nothing else in the temp dir is touched.
+const made = new Set();
+after(() => {
+  if (process.env.KEEP_RENDERS) return;
+  for (const dir of made) rmSync(dir, { recursive: true, force: true });
+  made.clear();
+});
 
 export function tmpDir() {
-  return mkdtempSync(join(tmpdir(), "readmereel-"));
+  const dir = mkdtempSync(join(tmpdir(), "readmereel-"));
+  made.add(dir);
+  return dir;
 }
 
 export function validStory() {

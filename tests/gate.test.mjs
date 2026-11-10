@@ -104,6 +104,19 @@ test("readability warnings inside a rebuilt screen or on UI text pass", () => {
   assert.deepEqual(gate(tree, exempt), []);
 });
 
+test("a selector that matches screen text and scene text in the same file blocks: every match must be UI text", () => {
+  const doc = parseHtml('<div id="h"><div class="screen-s1"><b class="k">a</b></div><b class="k">b</b></div>');
+  const [host] = querySelectorAll(doc, "#h");
+  const project = { doc, hosts: new Map([["compositions/s1-ui.html", host]]), added: new Map([[host, new Set()]]) };
+  assert.deepEqual(locate(project, "b.k", "compositions/s1-ui.html").map(textContent), ["a", "b"]);
+  const finding = { severity: "warning", code: "line_unread", message: "brief", selector: "b.k", sourceFile: "compositions/s1-ui.html", text: "b" };
+  assert.deepEqual(gateProblems({ craft: { findings: [finding] } }, () => project), ["craft: line_unread: brief (b.k)"]);
+  // The same selector with only the screen's element matching passes.
+  const screenOnly = parseHtml('<div id="h"><div class="screen-s1"><b class="k">a</b></div><b>b</b></div>');
+  const [host2] = querySelectorAll(screenOnly, "#h");
+  assert.deepEqual(gateProblems({ craft: { findings: [finding] } }, () => ({ doc: screenOnly, hosts: new Map([["compositions/s1-ui.html", host2]]), added: new Map([[host2, new Set()]]) })), []);
+});
+
 test("readability warnings on scene text block, naming the story field", () => {
   const { tree } = project();
   const problems = gate(tree, [

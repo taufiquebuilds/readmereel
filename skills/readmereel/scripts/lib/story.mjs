@@ -443,6 +443,14 @@ export function validateStory(story, baseDir) {
 // The terminal card's output area in each layout, in px, as template/scenes/terminal.html lays it out: the text width
 // inside the card's side padding, the height left under the title bar, the folder line and the command, and the size
 // the output starts at before it steps down 2 px at a time to fit.
+// It mirrors these rules of template/scenes/terminal.html (change both together):
+//   width:  `.term` 1600px (tall 1000px) minus `.term-line` padding 0 64px (tall 0 44px) on each side;
+//   height: `.term` height 880px (tall 1560px), minus `.term-head` height 54px, `.term-body` padding 40px 0 (tall
+//           48px 0), `.term-ctx` (its `.term-seg` 28px x line-height 1.3 + padding 8px 22px, plus the ctx's 16px bottom
+//           padding: 68 px, tall 30px seg: 71 px), `.term-cmdline` 48px x line-height 1.36 (tall 44px: 60 px) and
+//           `.term-out` margin-top 24px;
+//   rows:   `.term-line` line-height 1.36 with white-space: pre-wrap and overflow-wrap: anywhere;
+//   start:  the script's `const OUT = wide ? 36 : 32`, stepping down 2 px (`px -= 2`) until the lines fit.
 const TERMINAL_OUT = {
   wide: { width: 1600 - 2 * 64, height: 880 - 54 - 80 - 68 - 65 - 24, start: 36 },
   tall: { width: 1000 - 2 * 44, height: 1560 - 54 - 96 - 71 - 60 - 24, start: 32 },
