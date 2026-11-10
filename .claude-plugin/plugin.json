@@ -1,7 +1,7 @@
 {
   "name": "readmereel",
   "description": "Turn your README into a launch video: a 25-second MP4 in 16:9 and 9:16 plus a GIF, rendered locally for free.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": { "name": "Taufique Khan", "url": "https://github.com/taufiquebuilds" },
   "homepage": "https://github.com/taufiquebuilds/readmereel",
   "repository": "https://github.com/taufiquebuilds/readmereel",
