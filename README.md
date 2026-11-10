@@ -97,6 +97,7 @@ You also get `wide/` and `tall/`, two HyperFrames projects you can open and edit
 - Node 22 or newer
 - ffmpeg
 - Internet access: HyperFrames comes from npm, fetches Chrome on first run, and the video loads Google Fonts and GSAP
+- About 1 GB of free disk space during a render, on top of the one-time Chrome download (HyperFrames refuses to render with less than 1 GB free)
 - macOS or Linux (Windows is not supported yet)
 
 A render takes several minutes; give it a timeout of at least 15 minutes or run it in the background. If something is missing, the script says how to install it. readmereel turns HyperFrames telemetry off (`HYPERFRAMES_NO_TELEMETRY=1`).

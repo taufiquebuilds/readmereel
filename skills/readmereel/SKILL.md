@@ -80,7 +80,7 @@ Every scene is an object with a `type`. Each text field has a hard limit, and th
 | `hook` | `count` | optional | `{ "line": 0, "to": 40 }`: rolls a number up to `to` in that line. The line must contain the number |
 | `title` | `promise` | 60 characters | The outcome: "Monthly client reports that send themselves". About 6 to 9 words |
 | `ui` | `image` or `html` | exactly one | A real screenshot in the repo, or a rebuilt screen (see below) |
-| `ui` | `focus` | 1 to 3 boxes | `{ "box": [x, y, width, height], "label": "..." }`. `label` is optional, 28 characters. The camera pushes in on each box in turn |
+| `ui` | `focus` | required; 1 to 3 boxes | `{ "box": [x, y, width, height], "label": "..." }`. `label` is optional, 28 characters. The camera pushes in on each box in turn |
 | `ui` | `caption` | 32 characters, optional | What the viewer should take away: "Sent. By itself." |
 | `ui` | `states` | up to 8, `html` only | The product acting: `{ "at": 1.2, "selector": "#row1 .status", "set": "sent" }` |
 | `terminal` | `command` | 48 characters | The command, as a user types it |
@@ -126,7 +126,7 @@ Copy rules: short words, no hype ("revolutionary", "supercharge", "seamless", "u
 
 Every claim must be something the repo shows. The film must never contain anything you made up.
 
-- **Terminal:** run the command and copy the real output. If you cannot run it (it needs a key or a service), use the sample output the README itself shows. Keep each line to 64 characters and shorten by dropping lines, not by editing them. If the output has too many lines or lines too wide to read, the script warns you: use fewer or shorter lines.
+- **Terminal:** run the command and copy the real output. Run only safe, read-only commands. Ask the user before anything that writes, deletes, installs, sends or costs money. If you cannot run it (it needs a key or a service), use the sample output the README itself shows. Keep each line to 64 characters and shorten by dropping lines, not by editing them. If the output has too many lines or lines too wide to read, the script warns you: use fewer or shorter lines.
 - **Numbers:** only from the repo: its docs, its tests, its real output, or `gh repo view --json stargazerCount -q .stargazerCount`. Never round up, never guess.
 - **Screenshots:** only images that are already in the repo. Never make, fetch or edit one. If there is none, use `terminal`, `list` or `counter` instead, or rebuild a screen (below).
 - **Logo and colours:** only from the repo.
@@ -186,7 +186,7 @@ What the script does, in order: it checks the story and plans the film, gets Chr
 
 ## 6. Look at the result before you hand over
 
-When the render finishes, the script prints a list of files and any notes. Read `launch-video/contact.png`: one frame from the middle of every scene, in both sizes. Also read `launch-video/poster.png`. Look for text cut off, text too small, a screen that looks wrong, a focus box on the wrong spot, a number that is not the repo's, or a blank scene. If anything is wrong, fix `story.json` (or the screen) and render again. Do not hand over a film you have not looked at.
+When the render finishes, the script prints a list of files and any notes. Read `launch-video/contact.png`: one frame from the middle of every scene, in both sizes. Also read `launch-video/poster.png`. Look for text cut off, text too small, a screen that looks wrong, a focus box on the wrong spot, a number that is not the repo's, or a blank scene. If anything is wrong, fix `story.json` (or the screen) and render again. Do not hand over a film you have not looked at. If a fix changes the words or scenes the user approved, show them the change first.
 
 ## 7. Hand over
 
@@ -205,6 +205,6 @@ Give the user the exact absolute command so they can re-render without an agent.
 cd <absolute-path-to-the-repo> && node <absolute-path-to-this-skill-folder>/scripts/render.mjs launch-video/story.json
 ```
 
-To change words later, they edit `story.json` and run the same command again. Repeat any notes the script printed. If there was no music, say so and tell them how to add some: put `"music": "<an mp3, m4a, wav or ogg file>"` in `story.json`, or `"music": "heygen"` once the HeyGen CLI is signed in. Suggest adding `launch-video/wide/`, `launch-video/tall/`, `launch-video/.sfx/` and `launch-video/render.log` to `.gitignore`. If the film has no real screenshot or rebuilt screen, say that adding a screenshot to the repo makes the video stronger.
+To change words later, they edit `story.json` and run the same command again. Repeat any notes the script printed. If there was no music, say so and tell them how to add some: put `"music": "<an mp3, m4a, wav or ogg file>"` in `story.json`, or `"music": "heygen"` once the HeyGen CLI is signed in. Suggest adding `launch-video/wide/`, `launch-video/tall/`, `launch-video/.sfx/`, `launch-video/.music/` (so a licensed track is never committed) and `launch-video/render.log` to `.gitignore`. If the film has no real screenshot or rebuilt screen, say that adding a screenshot to the repo makes the video stronger.
 
 A story written for readmereel 0.1 (with `problem`, `promise` and `features`) still renders: the script converts it to a v2 film and leaves the file as it is.
