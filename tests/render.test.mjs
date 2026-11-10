@@ -4,8 +4,8 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { explainProblem } from "../skills/readmereel/scripts/render.mjs";
-import { tmpDir, validStory } from "./helpers.mjs";
+import { OUTPUTS } from "../skills/readmereel/scripts/render.mjs";
+import { tmpDir, validStory, validStory2 } from "./helpers.mjs";
 
 const SKILL = resolve(dirname(fileURLToPath(import.meta.url)), "../skills/readmereel");
 
@@ -17,39 +17,7 @@ test("the script runs when started through a symlinked skill folder", () => {
   assert.match(run.stderr, /No story file at /);
 });
 
-test("layout problems name the story field behind the element", () => {
-  const cases = {
-    "#s1-text": "problem",
-    "#s2-name": "name",
-    "#s2-promise": "promise",
-    "#s3 .title": "features[1].title",
-    "#s3 .detail": "features[1].detail",
-    "#s4 .title": "features[2].title",
-    "#s4 .detail": "features[2].detail",
-    "#s5 .title": "features[3].title",
-    "#s5 .detail": "features[3].detail",
-    // HyperFrames names elements without an id by their position, so these are the forms it really prints.
-    "#s3 > div:nth-of-type(1) > div:nth-of-type(2)": "features[1].title",
-    "#s3 > div:nth-of-type(1) > div:nth-of-type(3)": "features[1].detail",
-    "#s4 > div:nth-of-type(1) > div:nth-of-type(2)": "features[2].title",
-    "#s4 > div:nth-of-type(1) > div:nth-of-type(3)": "features[2].detail",
-    "#s5 > div:nth-of-type(1) > div:nth-of-type(2)": "features[3].title",
-    "#s5 > div:nth-of-type(1) > div:nth-of-type(3)": "features[3].detail",
-    "#s6-cmd": "install",
-    "#s6-line": "install",
-    "#s6-url": "url",
-  };
-  for (const [selector, field] of Object.entries(cases)) {
-    assert.equal(explainProblem(`layout: text_overflow: too wide (${selector})`), `layout: text_overflow: too wide (${selector}) -> story field: ${field}`);
-  }
-});
-
-test("unknown selectors and problems without one print as they are", () => {
-  assert.equal(explainProblem("layout: x: m (.mystery)"), "layout: x: m (.mystery)");
-  assert.equal(explainProblem("layout: x: m"), "layout: x: m");
-});
-
-test("videos from an earlier run are deleted before a new run starts, and a failed run leaves none", () => {
+test("outputs from an earlier run are deleted before a new run starts, and a failed run leaves none", () => {
   const repo = tmpDir();
   const bin = join(repo, "bin");
   mkdirSync(bin);
@@ -57,7 +25,8 @@ test("videos from an earlier run are deleted before a new run starts, and a fail
   chmodSync(join(bin, "npx"), 0o755);
   mkdirSync(join(repo, "launch-video"));
   writeFileSync(join(repo, "launch-video/story.json"), JSON.stringify(validStory()));
-  const stale = ["video-16x9.mp4", "video-9x16.mp4", "video.gif"].map((n) => join(repo, "launch-video", n));
+  assert.deepEqual(OUTPUTS, ["video-16x9.mp4", "video-9x16.mp4", "video.gif", "poster.png", "contact.png"]);
+  const stale = OUTPUTS.map((n) => join(repo, "launch-video", n));
   stale.forEach((f) => writeFileSync(f, "old"));
   const run = spawnSync("node", [join(SKILL, "scripts/render.mjs")], {
     cwd: repo, encoding: "utf8", env: { ...process.env, PATH: `${bin}:${process.env.PATH}` },
@@ -66,4 +35,26 @@ test("videos from an earlier run are deleted before a new run starts, and a fail
   assert.match(run.stderr, /Could not set up Chrome/);
   stale.forEach((f) => assert.equal(existsSync(f), false, `${f} should be gone`));
   assert.match(readFileSync(join(repo, "launch-video/render.log"), "utf8"), /fake npx: --yes hyperframes@0\.9\.9 browser ensure/);
+});
+
+test("a plan error is printed as the planner wrote it, and nothing is deleted", () => {
+  const repo = tmpDir();
+  mkdirSync(join(repo, "launch-video"));
+  const story = validStory2();
+  const long = "word ".repeat(9).trim().slice(0, 60);
+  story.scenes = [
+    { type: "hook", lines: ["one two three four", "one two three four", "one two three four"] },
+    { type: "title", promise: long },
+    { type: "terminal", command: "x".repeat(48), output: Array(12).fill("a b c d e f g h i j k l m n"), highlight: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11] },
+    { type: "list", items: ["a b c d e f g", "a b c d e f g", "a b c d e f g"] },
+    { type: "list", items: ["a b c d e f g", "a b c d e f g", "a b c d e f g"] },
+    { type: "counter", items: [1, 2, 3].map((v) => ({ value: v, label: "one two three four", note: "one two three four five" })) },
+    { type: "end" },
+  ];
+  writeFileSync(join(repo, "launch-video/story.json"), JSON.stringify(story));
+  writeFileSync(join(repo, "launch-video/poster.png"), "old");
+  const run = spawnSync("node", [join(SKILL, "scripts/render.mjs")], { cwd: repo, encoding: "utf8" });
+  assert.equal(run.status, 1, run.stderr);
+  assert.match(run.stderr, /^✗ Too much to read in 35 s: remove a scene or shorten text in scenes\[\d\] \(\w+\)\n$/);
+  assert.equal(existsSync(join(repo, "launch-video/poster.png")), true);
 });

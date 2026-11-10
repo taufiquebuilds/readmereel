@@ -437,3 +437,46 @@ export function validateStory(story, baseDir) {
   }
   return validateV2(story, baseDir);
 }
+
+// ---------- warnings (the story is valid, but something will not look its best) ----------
+
+// The terminal card's output area in each layout, in px, as template/scenes/terminal.html lays it out: the text width
+// inside the card's side padding, the height left under the title bar, the folder line and the command, and the size
+// the output starts at before it steps down 2 px at a time to fit.
+const TERMINAL_OUT = {
+  wide: { width: 1600 - 2 * 64, height: 880 - 54 - 80 - 68 - 65 - 24, start: 36 },
+  tall: { width: 1000 - 2 * 44, height: 1560 - 54 - 96 - 71 - 60 - 24, start: 32 },
+};
+const READ_FLOOR = 28;
+// JetBrains Mono advances 0.6 em; wide (CJK, full-width) characters take about a full em.
+const WIDE_CHAR = /[ᄀ-ᅟ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/u;
+const ems = (line) => Array.from(String(line)).reduce((sum, ch) => sum + (WIDE_CHAR.test(ch) ? 1 : 0.6), 0);
+
+// The output size the terminal template will settle on in one layout (an estimate from character widths).
+export function terminalOutputPx(output, layout) {
+  const box = TERMINAL_OUT[layout];
+  const lines = Array.isArray(output) ? output : [];
+  const fits = (px) => {
+    const rows = lines.reduce((sum, line) => sum + Math.max(1, Math.ceil((ems(line) * px) / box.width)), 0);
+    return rows * px * 1.36 <= box.height;
+  };
+  let px = box.start;
+  while (px > 16 && !fits(px)) px -= 2;
+  return px;
+}
+
+// Warnings for a valid v2 story: printed and logged, they never stop the render.
+export function storyWarnings(story) {
+  const warnings = [];
+  (Array.isArray(story?.scenes) ? story.scenes : []).forEach((scene, i) => {
+    if (scene?.type !== "terminal" || !Array.isArray(scene.output)) return;
+    for (const layout of ["wide", "tall"]) {
+      const px = terminalOutputPx(scene.output, layout);
+      if (px < READ_FLOOR) {
+        warnings.push(`scenes[${i}].output: too much text to show at ${READ_FLOOR} px in the ${layout} video (about ${px} px); use fewer or shorter lines`);
+        break;
+      }
+    }
+  });
+  return warnings;
+}

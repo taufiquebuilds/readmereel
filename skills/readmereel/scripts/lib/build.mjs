@@ -11,8 +11,6 @@ import { imageSize, toV2 } from "./story.mjs";
 // transition length) plus the sound cues, and one file per scene stamped from template/scenes/<type>.html.
 
 export const TEMPLATE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../../template");
-// v1's fixed film length. Only hf.mjs still reads it (its check sample count) until the v2 render flow replaces it.
-export const DURATION = 25;
 export const LAYOUTS = {
   wide: { width: 1920, height: 1080, video: "video-16x9.mp4" },
   tall: { width: 1080, height: 1920, video: "video-9x16.mp4" },

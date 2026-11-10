@@ -235,3 +235,19 @@ test("an image header with a zero width or height gives the default size, never 
   writeFileSync(join(dir, "z.svg"), '<svg width="0" height="10"></svg>');
   for (const f of ["w0.png", "h0.png", "z.gif", "z.svg"]) assert.deepEqual(imageSize(join(dir, f)), [1600, 1000], f);
 });
+
+test("a terminal whose output would shrink under 28 px warns (it never fails)", async () => {
+  const { storyWarnings, terminalOutputPx, validateStory } = await import("../skills/readmereel/scripts/lib/story.mjs");
+  const longest = Array(12).fill("x".repeat(64));
+  assert.equal(terminalOutputPx(longest, "wide"), 36);
+  assert.equal(terminalOutputPx(longest, "tall"), 32);
+  const cjk = Array(12).fill("端".repeat(56));
+  assert.ok(terminalOutputPx(cjk, "wide") < 28);
+  const story = validStory2();
+  story.scenes.splice(2, 0, { type: "terminal", command: "x", output: cjk });
+  story.scenes.splice(4, 1);
+  assert.deepEqual(validateStory(story, tmpDir()), []);
+  assert.deepEqual(storyWarnings(story), [`scenes[2].output: too much text to show at 28 px in the wide video (about ${terminalOutputPx(cjk, "wide")} px); use fewer or shorter lines`]);
+  story.scenes[2].output = longest;
+  assert.deepEqual(storyWarnings(story), []);
+});

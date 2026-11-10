@@ -1,0 +1,31 @@
+<style>
+  body { margin: 0; background: #f7f8fa; color: #16181d; font-family: Inter, sans-serif; }
+  .top { display: flex; align-items: center; gap: 28px; padding: 22px 36px; background: #ffffff; border-bottom: 1px solid #e5e7eb; font-size: 22px; }
+  .top b { font-size: 26px; margin-right: 24px; }
+  .top span { color: #5b6270; }
+  .top .on { color: #16181d; font-weight: 600; }
+  h1 { font-size: 40px; margin: 36px 36px 8px; }
+  .sub { margin: 0 36px 24px; font-size: 22px; color: #5b6270; }
+  table { margin: 0 36px; width: calc(100% - 72px); border-collapse: collapse; background: #ffffff; border: 1px solid #e5e7eb; border-radius: 14px; font-size: 24px; }
+  th { text-align: left; padding: 18px 24px; font-size: 18px; color: #5b6270; border-bottom: 1px solid #e5e7eb; }
+  td { padding: 18px 24px; border-bottom: 1px solid #eef0f3; }
+  .status { position: relative; height: 40px; width: 220px; }
+  .status > span { position: absolute; left: 0; top: 0; padding: 4px 16px; border-radius: 999px; font-weight: 600; }
+  .tick { display: inline-block; margin-right: 6px; }
+  .status .was { background: #fef3c7; color: #92400e; }
+  .status .now { background: #dcfce7; color: #166534; opacity: 0; }
+  .live .was { opacity: 0; }
+  .live .now { opacity: 1; }
+</style>
+<div class="top"><b>shipfast</b><span class="on">Services</span><span>Deploys</span><span>Settings</span></div>
+<h1>Services</h1>
+<p class="sub">Last deploy 4 Nov, 07:00 from main</p>
+<table>
+  <thead><tr><th>Service</th><th>Region</th><th>Version</th><th>Status</th></tr></thead>
+  <tbody>
+    <tr><td>api</td><td>eu-west</td><td>v2.4.1</td><td><div class="status"><span class="was">Deploying</span><span class="now"><span class="tick">✓</span> Live</span></div></td></tr>
+    <tr><td>web</td><td>eu-west</td><td>v2.4.1</td><td><div class="status"><span class="was">Deploying</span><span class="now"><span class="tick">✓</span> Live</span></div></td></tr>
+    <tr><td>worker</td><td>us-east</td><td>v2.4.1</td><td><div class="status"><span class="was">Deploying</span><span class="now"><span class="tick">✓</span> Live</span></div></td></tr>
+    <tr><td>billing</td><td>us-east</td><td>v2.4.0</td><td><div class="status"><span class="was">Deploying</span><span class="now"><span class="tick">✓</span> Live</span></div></td></tr>
+  </tbody>
+</table>

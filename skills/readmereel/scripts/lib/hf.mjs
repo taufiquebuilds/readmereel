@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import { appendFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { DURATION } from "./build.mjs";
+import { gateProblems, loadProject } from "./gate.mjs";
 
 export const HF = ["--yes", "hyperframes@0.9.9"];
 
@@ -65,12 +65,16 @@ export function ensureBrowser({ log, run } = {}) {
   }
 }
 
-// HyperFrames downgrades a layout finding seen in only one sample to "info", which this gate ignores. The default
-// 9 samples leave most 3-4 second scenes with a single sample, so sample every second of the video (one sample per second): each scene gets 3 or more.
-export const CHECK_SAMPLES = DURATION;
+// HyperFrames downgrades a layout finding seen in only one sample to "info", which this gate ignores. Its default of 9
+// samples leaves short scenes with a single sample, so sample at least once a second of the film (and never under 25).
+export const checkSamples = (duration) => Math.max(25, Math.ceil(Number(duration) || 0));
 
-export function checkProject(projectDir, { log, run } = {}) {
-  const result = runHf(["check", "--json", "--samples", String(CHECK_SAMPLES), resolve(projectDir)], { log, run, timeout: TIMEOUTS.check });
+// Runs `hyperframes check` on a built project and returns its blocking problems (see gate.mjs): every error, and the
+// readability warnings about readmereel's own text. Fails closed: no JSON is an error, and a failed check that lists
+// nothing still returns a problem.
+export function checkProject(projectDir, { log, run, duration } = {}) {
+  const args = ["check", "--json", "--samples", String(checkSamples(duration)), resolve(projectDir)];
+  const result = runHf(args, { log, run, timeout: TIMEOUTS.check });
   if (result.error) {
     throw new Error(`Could not run HyperFrames check${causeOf(result, TIMEOUTS.check)}${seeLog(log)}`);
   }
@@ -78,13 +82,7 @@ export function checkProject(projectDir, { log, run } = {}) {
   if (!report || typeof report !== "object" || Array.isArray(report)) {
     throw new Error(`HyperFrames check did not return JSON${seeLog(log)}`);
   }
-  const problems = [];
-  for (const [section, value] of Object.entries(report)) {
-    if (!value || typeof value !== "object" || !Array.isArray(value.findings)) continue;
-    for (const f of value.findings) {
-      if (f.severity === "error") problems.push(`${section}: ${f.code}: ${f.message}${f.selector ? ` (${f.selector})` : ""}`);
-    }
-  }
+  const problems = gateProblems(report, () => loadProject(projectDir));
   const failed = report.ok === false || (typeof result.status === "number" && result.status !== 0);
   if (!problems.length && failed) {
     return [`check: HyperFrames check failed without listing errors${seeLog(log)}`];

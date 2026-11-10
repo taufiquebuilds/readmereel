@@ -3,8 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import { DURATION } from "../skills/readmereel/scripts/lib/build.mjs";
-import { CHECK_SAMPLES, checkProject, ensureBrowser, HF, renderProject, runHf } from "../skills/readmereel/scripts/lib/hf.mjs";
+import { checkProject, checkSamples, ensureBrowser, HF, renderProject, runHf } from "../skills/readmereel/scripts/lib/hf.mjs";
 import { tmpDir } from "./helpers.mjs";
 
 function fakeRun(result, calls = []) {
@@ -136,8 +135,15 @@ test("npx never runs inside the project: it runs from one private folder in the 
   }
 });
 
-test("the check takes at least one sample per second of video", () => {
-  assert.ok(CHECK_SAMPLES >= DURATION, `${CHECK_SAMPLES} samples cannot cover ${DURATION} s`);
+test("the check takes at least one sample per second of the film, and never fewer than 25", () => {
+  assert.equal(checkSamples(15), 25);
+  assert.equal(checkSamples(25), 25);
+  assert.equal(checkSamples(25.2), 26);
+  assert.equal(checkSamples(34.97), 35);
+  assert.equal(checkSamples(undefined), 25);
+  const calls = [];
+  checkProject("/p", { log: logIn(), duration: 31.4, run: fakeRun({ stdout: JSON.stringify({ ok: true }) }, calls) });
+  assert.deepEqual(calls[0].args.slice(2, 6), ["check", "--json", "--samples", "32"]);
 });
 
 test("the project goes in as the trailing DIR argument, and the output path is absolute", () => {

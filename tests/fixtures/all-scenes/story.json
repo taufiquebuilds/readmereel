@@ -1,0 +1,24 @@
+{
+  "version": 2,
+  "name": "shipfast",
+  "url": "github.com/example/shipfast",
+  "install": "npm install -g shipfast",
+  "accent": "#2563eb",
+  "style": "midnight",
+  "logo": "launch-video/logo.svg",
+  "scenes": [
+    { "type": "hook", "lines": ["12 services.", "12 dashboards.", "One command."], "accentWords": ["One"], "count": { "line": 0, "to": 12 } },
+    { "type": "title", "promise": "Ship every service from one terminal" },
+    { "type": "ui", "html": "launch-video/screens/dashboard.html",
+      "focus": [{ "box": [36, 330, 1388, 360], "label": "Every service, live" }],
+      "states": [{ "at": 1.4, "selector": ".status", "set": "live" }],
+      "caption": "Live. By itself." },
+    { "type": "terminal", "command": "shipfast deploy --all",
+      "output": ["Building api, web, worker, billing", "api      eu-west   v2.4.1   ok", "web      eu-west   v2.4.1   ok", "worker   us-east   v2.4.1   ok", "4 services live in 38 s"],
+      "highlight": [4] },
+    { "type": "counter", "items": [{ "value": 12, "label": "Services" }, { "value": 38, "label": "Seconds", "suffix": "s", "note": "per full deploy" }] },
+    { "type": "compare", "before": { "label": "Before", "image": "docs/before.png" }, "after": { "label": "With shipfast", "image": "docs/after.png" } },
+    { "type": "list", "items": ["One command per deploy", "Rollback in one second", "Free and open source"] },
+    { "type": "end" }
+  ]
+}
