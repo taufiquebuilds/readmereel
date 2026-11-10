@@ -7,3 +7,6 @@ examples/*/*.mp4
 examples/*/render.log
 .hyperframes/
 renders/
+examples/*/.sfx/
+examples/*/.music/
+examples/*/contact.png

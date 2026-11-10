@@ -1,25 +1,64 @@
 {
+  "version": 2,
   "name": "readmereel",
-  "problem": "Good repos get ignored because nobody reads a README",
-  "promise": "Turn your README into a launch video",
-  "features": [
-    {
-      "title": "Two sizes and a GIF, one run",
-      "detail": "16:9 for your README and launch posts, 9:16 for X, LinkedIn and Reels",
-      "image": "examples/readmereel/both-sizes.png"
-    },
-    {
-      "title": "Built from your real screenshots",
-      "detail": "Your agent writes the words and never makes up an image",
-      "image": "examples/nopurple/poster.png"
-    },
-    {
-      "title": "Free and local",
-      "detail": "Renders on your machine with HyperFrames, no API keys and no AI video model"
-    }
-  ],
-  "install": "/plugin install readmereel@readmereel",
   "url": "github.com/taufiquebuilds/readmereel",
-  "stars": null,
-  "accent": "#f97316"
+  "install": "/plugin install readmereel@readmereel",
+  "accent": "#f97316",
+  "style": "midnight",
+  "music": null,
+  "scenes": [
+    {
+      "type": "hook",
+      "lines": [
+        "Nobody reads",
+        "your README."
+      ],
+      "accentWords": [
+        "README."
+      ]
+    },
+    {
+      "type": "title",
+      "promise": "Turn your README into a launch film"
+    },
+    {
+      "type": "compare",
+      "before": {
+        "label": "The README screenshot",
+        "image": "examples/readmereel/agencyrecap-dashboard.png"
+      },
+      "after": {
+        "label": "Its launch film",
+        "image": "examples/readmereel/agencyrecap-frame.png"
+      }
+    },
+    {
+      "type": "counter",
+      "items": [
+        {
+          "value": 8,
+          "label": "Scene types"
+        },
+        {
+          "value": 3,
+          "label": "Styles"
+        },
+        {
+          "value": 5,
+          "label": "Transitions"
+        }
+      ]
+    },
+    {
+      "type": "list",
+      "items": [
+        "Two sizes and a GIF, one run",
+        "Only your real screenshots",
+        "Free and local, no API keys"
+      ]
+    },
+    {
+      "type": "end"
+    }
+  ]
 }

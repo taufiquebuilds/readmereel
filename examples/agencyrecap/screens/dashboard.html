@@ -1,0 +1,64 @@
+<!-- agencyrecap's dashboard, rebuilt from clientreport/templates/base.html and dashboard.html (real markup and CSS,
+     sizes scaled up for video). Clients, addresses and times are the repo's own demo data (scripts/make_screenshots.py). -->
+<style>
+  :root { --fg: #16181d; --muted: #6b7280; --line: #e5e7eb; --ok: #1f7a4d; --bad: #b42318; --bg: #fafafa; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; color: var(--fg); background: var(--bg); }
+  nav { display: flex; gap: 32px; align-items: center; padding: 16px 40px; background: #fff; border-bottom: 1px solid var(--line); font-size: 24px; }
+  nav .grow { flex: 1; }
+  nav a { color: var(--fg); text-decoration: none; font-weight: 600; }
+  main { max-width: 1340px; margin: 26px auto; padding: 0 20px; }
+  h1 { font-size: 46px; margin: 0 0 18px; letter-spacing: -0.01em; }
+  p { margin: 0 0 22px; }
+  .ok { color: var(--ok); }
+  .hint { color: var(--muted); font-size: 19px; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--line); font-size: 23px; }
+  th, td { text-align: left; padding: 15px 20px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  button, .button { font: inherit; font-size: 21px; padding: 7px 15px; border-radius: 7px; border: 1px solid var(--line); background: #fff; color: var(--fg); text-decoration: none; display: inline-block; margin-right: 6px; }
+  button.primary, .button.primary { background: var(--fg); color: #fff; border-color: var(--fg); }
+  nav button { font-size: 22px; }
+  button, .button, td:last-child { white-space: nowrap; }
+  .status { position: relative; height: 34px; min-width: 300px; }
+  .status .was, .status .now { position: absolute; left: 0; top: 0; white-space: nowrap; }
+  .status .now { display: flex; align-items: center; gap: 10px; opacity: 0; font-weight: 600; }
+  .status .tick { width: 30px; height: 30px; border-radius: 50%; background: var(--ok); color: #fff; display: grid; place-items: center; font-size: 18px; font-weight: 700; }
+  .sent .was { opacity: 0; }
+  .sent .now { opacity: 1; }
+</style>
+<nav>
+  <a>Clients</a>
+  <a>Settings</a>
+  <span class="grow"></span>
+  <button>Log out</button>
+</nav>
+<main>
+<h1>Clients</h1>
+<p><a class="button primary">Add client</a></p>
+<table>
+  <tr><th>Client</th><th>Monthly send</th><th>October 2026 report</th><th></th></tr>
+  <tr id="row1">
+    <td><strong>Cobalt Fitness</strong><br><span class="hint">team@cobaltfitness.example, gm@cobaltfitness.example</span></td>
+    <td><button>On, day 6</button></td>
+    <td><div class="status"><span class="was">Not sent yet</span><span class="now ok"><span class="tick">✓</span>Sent 6 Nov, 07:00 GMT</span></div></td>
+    <td><a class="button">Preview</a><button>Send now</button><a class="button">Edit</a></td>
+  </tr>
+  <tr id="row2">
+    <td><strong>Harbor Lane Dental</strong><br><span class="hint">maria@harborlanedental.example</span></td>
+    <td><button>On, day 4</button></td>
+    <td><div class="status"><span class="was">Not sent yet</span><span class="now ok"><span class="tick">✓</span>Sent 4 Nov, 07:00 GMT</span></div></td>
+    <td><a class="button">Preview</a><button>Send now</button><a class="button">Edit</a></td>
+  </tr>
+  <tr id="row3">
+    <td><strong>Maple Grove Law</strong><br><span class="hint">office@maplegrovelaw.example</span></td>
+    <td><button>On, day 10</button></td>
+    <td><div class="status"><span class="was">Not sent yet</span><span class="now ok"><span class="tick">✓</span>Sent 10 Nov, 07:00 GMT</span></div></td>
+    <td><a class="button">Preview</a><button>Send now</button><a class="button">Edit</a></td>
+  </tr>
+  <tr id="row4">
+    <td><strong>Ridgeway Bakery</strong><br><span class="hint">owner@ridgewaybakery.example</span></td>
+    <td><button>On, day 4</button></td>
+    <td><div class="status"><span class="was">Not sent yet</span><span class="now ok"><span class="tick">✓</span>Sent 4 Nov, 07:00 GMT</span></div></td>
+    <td><a class="button">Preview</a><button>Send now</button><a class="button">Edit</a></td>
+  </tr>
+</table>
+</main>

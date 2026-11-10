@@ -1,13 +1,78 @@
 {
+  "version": 2,
   "name": "repoheat",
-  "problem": "GitHub shows a total, so you miss the repo that is taking off",
-  "promise": "See which of your repos are heating up, in your terminal",
-  "features": [
-    { "title": "Stars gained, repo by repo", "detail": "Stars in the last 2 and 7 days for every repo you own, plus a 30-day chart", "image": "examples/repoheat/dashboard.png" },
-    { "title": "A viral score you can read", "detail": "0 to 100, with every point explained: momentum, acceleration, spike, freshness" },
-    { "title": "Works on any public profile", "detail": "Point it at any user or organization, not just your own account" }
-  ],
-  "install": "repoheat dashboard --user ratatui",
   "url": "github.com/taufiquebuilds/repoheat",
-  "stars": null
+  "install": "repoheat dashboard --user ratatui",
+  "style": "midnight",
+  "music": null,
+  "scenes": [
+    {
+      "type": "hook",
+      "lines": [
+        "77 stars this week.",
+        "You never noticed."
+      ],
+      "accentWords": [
+        "noticed."
+      ],
+      "count": {
+        "line": 0,
+        "to": 77
+      }
+    },
+    {
+      "type": "title",
+      "promise": "See which of your repos are heating up"
+    },
+    {
+      "type": "terminal",
+      "command": "repoheat pulse ratatui/ratatui",
+      "output": [
+        "ratatui/ratatui",
+        "Stars        23,144",
+        "Forks        820",
+        "Last 2 days  +11",
+        "Last 7 days  +66",
+        "Viral score  49/100 · Warming up"
+      ],
+      "highlight": [
+        5
+      ]
+    },
+    {
+      "type": "ui",
+      "image": "examples/repoheat/dashboard-ratatui.png",
+      "focus": [
+        {
+          "box": [
+            430,
+            80,
+            300,
+            420
+          ],
+          "label": "Stars gained in 7 and 2 days"
+        },
+        {
+          "box": [
+            740,
+            280,
+            520,
+            120
+          ],
+          "label": "Every point explained"
+        }
+      ]
+    },
+    {
+      "type": "list",
+      "items": [
+        "Stars gained, repo by repo",
+        "A viral score, no black box",
+        "Works on any public repo"
+      ]
+    },
+    {
+      "type": "end"
+    }
+  ]
 }

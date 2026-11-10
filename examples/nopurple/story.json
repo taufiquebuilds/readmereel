@@ -1,14 +1,85 @@
 {
+  "version": 2,
   "name": "nopurple",
-  "problem": "AI decks all look the same: blue gradients and topic titles",
-  "promise": "Slides and charts that look designed by a person",
-  "features": [
-    { "title": "Slides that lead with the number", "detail": "Each title is the point as a sentence, with the real number up front", "image": "examples/nopurple/real-before-after.png" },
-    { "title": "Charts with one clear point", "detail": "Grey bars, one accent colour, values labelled, scales that start at zero", "image": "examples/nopurple/charts-before-after.png" },
-    { "title": "Six calm themes", "detail": "Paper, ink, swiss, forest, sand and mono, the same for slides and charts", "image": "examples/nopurple/themes.png" }
-  ],
-  "install": "/plugin marketplace add taufiquebuilds/nopurple",
   "url": "github.com/taufiquebuilds/nopurple",
-  "stars": null,
-  "accent": "#d9480f"
+  "install": "/plugin marketplace add taufiquebuilds/nopurple",
+  "accent": "#d9480f",
+  "style": "paper",
+  "music": null,
+  "scenes": [
+    {
+      "type": "hook",
+      "lines": [
+        "Blue gradients.",
+        "Topic titles.",
+        "Every AI deck."
+      ],
+      "accentWords": [
+        "AI"
+      ]
+    },
+    {
+      "type": "title",
+      "promise": "Slides and charts that look designed by a person"
+    },
+    {
+      "type": "ui",
+      "image": "examples/nopurple/real-before-after.png",
+      "focus": [
+        {
+          "box": [
+            642,
+            76,
+            636,
+            358
+          ],
+          "label": "Without nopurple"
+        },
+        {
+          "box": [
+            642,
+            510,
+            636,
+            364
+          ],
+          "label": "With nopurple"
+        }
+      ]
+    },
+    {
+      "type": "counter",
+      "items": [
+        {
+          "value": 41,
+          "label": "Example AI deck",
+          "note": "slop check, out of 100"
+        },
+        {
+          "value": 100,
+          "label": "With nopurple",
+          "note": "slop check, out of 100"
+        }
+      ]
+    },
+    {
+      "type": "compare",
+      "before": {
+        "label": "AI default",
+        "points": [
+          "Topic titles",
+          "\"Significant growth\""
+        ]
+      },
+      "after": {
+        "label": "With nopurple",
+        "points": [
+          "The point as a sentence",
+          "\"+13 points\""
+        ]
+      }
+    },
+    {
+      "type": "end"
+    }
+  ]
 }
