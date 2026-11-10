@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { closeSync, constants, copyFileSync, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { musicTag } from "./music-tag.mjs";
 import { planFilm } from "./plan.mjs";
 import { cssUnescape, decodeEntities, MAX_IMAGES, sanitizeScreen, scopeCss } from "./sanitize.mjs";
 import { imageSize, toV2 } from "./story.mjs";
@@ -385,7 +386,15 @@ function audioTags(cues, sfxDir, projectDir) {
   return tags.map((t) => `      ${t}`).join("\n");
 }
 
-export function buildProject(story, layout, { baseDir, outDir, plan, sfxDir, templateDir = TEMPLATE_DIR }) {
+// A music file (absolute path) becomes assets/music.<ext> and one track-99 <audio> tag.
+function musicHtml(music, duration, projectDir) {
+  if (!music || !existsSync(music)) return "";
+  const rel = `assets/music${extname(music).toLowerCase()}`;
+  copyInto(projectDir, music, rel);
+  return `      ${musicTag(rel, duration)}`;
+}
+
+export function buildProject(story, layout, { baseDir, outDir, plan, sfxDir, music, templateDir = TEMPLATE_DIR }) {
   const size = LAYOUTS[layout];
   if (!size) throw new Error(`unknown layout: ${layout}`);
   plan ??= planFilm(toV2(story, baseDir));
@@ -431,7 +440,7 @@ export function buildProject(story, layout, { baseDir, outDir, plan, sfxDir, tem
     BG: plan.scenes[0]?.ground ?? "#08090b",
     DURATION: num(plan.duration),
     HOSTS: hosts,
-    AUDIO: audioTags(plan.cues ?? [], sfxDir, projectDir),
+    AUDIO: [audioTags(plan.cues ?? [], sfxDir, projectDir), musicHtml(music, plan.duration, projectDir)].filter(Boolean).join("\n"),
   }, "root.html");
   writeFileSync(join(projectDir, "index.html"), root);
   return projectDir;

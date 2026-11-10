@@ -1,0 +1,1 @@
+{"ok":false,"code":"heygen_cli_missing","fix":"Install the CLI from https://developers.heygen.com/cli, then run: hyperframes auth login","error":"bgm needs the heygen CLI, which is not installed: use your host app's own music tool if it has one, or install the CLI."}
