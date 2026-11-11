@@ -10,3 +10,4 @@ renders/
 examples/*/.sfx/
 examples/*/.music/
 examples/*/contact.png
+dist-release/
