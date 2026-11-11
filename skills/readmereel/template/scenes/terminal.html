@@ -120,7 +120,7 @@ __RUNTIME__
   const inked = (el) => { range.selectNodeContents(el); return rect(range); };
   const unite = (rs) => { const x0 = Math.min(...rs.map((r) => r.x)), y0 = Math.min(...rs.map((r) => r.y)); return { x: x0, y: y0, w: Math.max(...rs.map((r) => r.x + r.w)) - x0, h: Math.max(...rs.map((r) => r.y + r.h)) - y0 }; };
   // The push (RR.termPush): onto the highlighted lines' text, up to 1.4 and never so far that it leaves the margins;
-  // down, the lines centred; across, the whole text column centred, or left-aligned 80 px in when it is too wide. Lines too wide for a real push (under 1.3) give way to the first highlighted line alone; without
+  // down, the lines centred; across, the whole text column (the command included) centred, the push capped so it fits. Lines too wide for a real push (under 1.3) give way to the first highlighted line alone; without
   // highlights the push goes to the last line.
   const hls = qa(".term-line.hl");
   const focus = hls[0] || lines.at(-1);

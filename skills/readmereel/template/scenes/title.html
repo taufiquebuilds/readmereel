@@ -67,6 +67,8 @@ __RUNTIME__
     // Letters 0.035 s apart, but a long name still lands within 0.4 s.
     .fromTo(qa(".title-name .l"), { opacity: 0.55, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.28, stagger: Math.min(0.035, 0.4 / Math.max(1, qa(".title-name .l").length - 1)), ease: "power2.out" }, tName);
   RR.blurIn(tl, words, tPromise, { stagger: 0.07, duration: 0.16 });
+  // A zoom exit dives through the badge, which grows as an accent disc into the next scene's ground.
+  q(".title-badge").setAttribute("data-zoom-disc", D.data.accent);
   S.done();
 })();
 </script>

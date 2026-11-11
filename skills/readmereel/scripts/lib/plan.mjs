@@ -5,6 +5,8 @@ import { DEFAULT_ACCENT } from "./story.mjs";
 export const T = 0.35;
 // After a scene's last hold: the outgoing transition (T) plus a margin, so nothing is still being read as it leaves.
 const EXIT = T + 0.12;
+// The title's hold after its last word lands, at most: it introduces the product and gets out of its way.
+const TITLE_HOLD = 1.0;
 const FRAME = 1 / 30;
 const MIN_FILM = 15;
 const MAX_FILM = 35;
@@ -86,9 +88,18 @@ export function sceneLength(scene, story = {}, entering = null) {
       const lines = scene.lines ?? [];
       return b.lineStarts.at(-1) + T + hold(lines.at(-1)) + 0.2;
     }
-    case "title":
-      // The promise's words blur in 0.07 s apart from 0.8 and each takes 0.16 s; then it holds.
-      return 0.8 + 0.07 * Math.max(0, words(scene.promise) - 1) + 0.16 + hold(scene.promise) + EXIT;
+    case "title": {
+      // The promise's words blur in 0.07 s apart from its land time (0.5) and each takes 0.16 s; then it holds, at most
+      // TITLE_HOLD: the name is on screen from the first frames and the words are read as they land, so the film
+      // reaches the product soon after. The promise still stays up 0.8 x its full hold (the gate's line_unread floor is
+      // 0.75 x; it is on screen until about 0.1 s into the exit).
+      const promiseAt = b.landTimes[2];
+      const h = hold(scene.promise);
+      // The gate counts a hyphenated word ("human-made") as two.
+      const gateHold = 0.5 + 0.3 * String(scene.promise ?? "").split(/[\s\-\u2010-\u2014]+/).filter(Boolean).length;
+      const reading = Math.max(0.07 * Math.max(0, words(scene.promise) - 1) + 0.16 + Math.min(h, TITLE_HOLD), 0.8 * Math.max(h, gateHold) - 0.1);
+      return promiseAt + reading + EXIT;
+    }
     case "ui":
       return b.captionAt + hold(scene.caption ?? "") + 0.35;
     case "terminal": {

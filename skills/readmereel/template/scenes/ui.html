@@ -208,7 +208,10 @@ __RUNTIME__
   const onScreen = (r) => ({ x: back.x + back.scale * r.x, y: back.y + back.scale * r.y, w: back.scale * r.w, h: back.scale * r.h });
   let dive = target && onScreen(target);
   const visible = (r) => r.x >= SAFE && r.x + r.w <= W - SAFE && r.y >= top && r.y + r.h <= capTop;
-  if (!dive || !visible(dive)) { dive = onScreen(last); disc = ""; }
+  // No tick to dive through (an image, or a tick hidden under the caption): the dive aims at the last focus box's
+  // centre, through a 120 px disc in the accent colour, so every zoom floods through a colour.
+  if (!dive || !visible(dive)) { const b = onScreen(last); dive = { x: b.x + b.w / 2 - 60, y: b.y + b.h / 2 - 60, w: 120, h: 120 }; disc = D.data.accent; }
+  if (!disc) disc = D.data.accent; // a tick with no colour of its own floods in the accent
   const zw = disc ? dive.w : Math.min(240, Math.max(dive.w, dive.h)), zh = disc ? dive.h : zw;
   const zt = q(".ui-target");
   Object.assign(zt.style, { left: dive.x + dive.w / 2 - zw / 2 + "px", top: dive.y + dive.h / 2 - zh / 2 + "px", width: zw + "px", height: zh + "px" });

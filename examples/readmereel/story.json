@@ -19,16 +19,16 @@
     },
     {
       "type": "title",
-      "promise": "Turn your README into a launch film"
+      "promise": "Your README as a launch film"
     },
     {
       "type": "compare",
       "before": {
-        "label": "The README screenshot",
+        "label": "A README screenshot",
         "image": "examples/readmereel/agencyrecap-dashboard.png"
       },
       "after": {
-        "label": "Its launch film",
+        "label": "And its launch film",
         "image": "examples/readmereel/agencyrecap-frame.png"
       }
     },

@@ -159,10 +159,17 @@ test("a counter holds its longest label and note after the last item settles", (
   near(sceneLength(scene, validStory2()), itemStarts.at(-1) + 1.08 + hold("Sessions up 10%") + T + 0.12);
 });
 
-test("the title badge is on screen from the first frame and the promise holds after its last word lands", () => {
+test("the title badge is on screen from the first frame and the promise holds after its last word lands, at most 1 s", () => {
   const scene = { type: "title", promise: "Monthly client reports that send themselves" };
   assert.deepEqual(sceneBeats(scene, validStory2()).landTimes, [0, 0.05, 0.5]);
-  near(sceneLength(scene, validStory2()), 0.8 + 0.07 * 5 + 0.16 + hold(scene.promise) + T + 0.12);
+  // hold(6 words) = 2.3 s: the hold after the last word is capped at 1.0 s, but the promise stays up 0.8 x 2.3 - 0.1 s
+  // (the gate's reading floor is 0.75 x), so the title is 2.71 s, not the 4.4 s it would be uncapped.
+  near(sceneLength(scene, validStory2()), 0.5 + Math.max(0.07 * 5 + 0.16 + 1.0, 0.8 * hold(scene.promise) - 0.1) + T + 0.12);
+  near(sceneLength(scene, validStory2()), 0.5 + 1.74 + 0.47);
+  // A hyphenated word counts as two for the reading floor, as the gate counts it.
+  near(sceneLength({ type: "title", promise: "Slides and charts that look human-made" }, validStory2()), 0.5 + (0.8 * (0.5 + 0.3 * 7) - 0.1) + T + 0.12);
+  // A short promise holds its own (shorter) time.
+  near(sceneLength({ type: "title", promise: "Hi" }, validStory2()), 0.5 + 0.16 + hold("Hi") + T + 0.12);
 });
 
 test("each scene knows the ground it enters from", () => {

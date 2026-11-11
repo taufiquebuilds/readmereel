@@ -151,10 +151,12 @@ test("ui camera: the frame's edges are moved off any text they would cut", () =>
   assert.ok(out.x + box.x >= RR.cam.SAFE);
 });
 
-test("ui camera: tall frames a box by height (about half the frame) and pans across a box wider than the frame", () => {
+test("ui camera: tall fills the width with the box, the window over 60% of the height, and pans a wider box", () => {
   const r = RR.cam.rect(tallG, { scale: 1, x: 0, y: 0 }, [240, 190, 980, 500]);
   const plan = RR.cam.focus(tallG, r, [], { top: 250, bottom: 1880 });
-  assert.ok(Math.abs(plan.from.scale * r.h - 0.5 * 1920) < 1 || plan.from.scale === 2.6 || plan.from.scale === 1.2, "box about half the height");
+  const g = RR.cam.geometry(1080, 1920);
+  assert.ok(plan.from.scale * r.w >= 1000 - 1e-6, "the box fills the width");
+  assert.ok(plan.from.scale * g.WH >= 0.6 * 1920 - 1e-6, "the window covers at least 60% of the height");
   assert.ok(plan.to, "a box wider than the frame is panned");
   assert.ok(Math.abs(plan.from.x + plan.from.scale * r.x - RR.cam.SAFE) < 30, "the pan starts at the box's left edge");
   assert.ok(Math.abs(plan.to.x + plan.to.scale * (r.x + r.w) - (1080 - RR.cam.SAFE)) < 30, "and ends at its right edge");
@@ -244,9 +246,14 @@ test("terminal push: a real push (up to 1.4) onto the highlighted lines, centred
   // With the text column: centred across when it fits at the push's scale...
   const col = RR.termPush(1920, 1080, { x: 300, y: 500, w: 900, h: 150 }, 1.4, { x: 300, y: 200, w: 1000, h: 700 });
   assert.ok(Math.abs(on(col, 300, 0).x + on(col, 1300, 0).x - 1920) < 1e-9, "column centred");
-  // ...else left-aligned 80 px in (tails cut), the block still inside the margins.
-  const left = RR.termPush(1080, 1920, { x: 84, y: 900, w: 600, h: 90 }, 1.4, { x: 84, y: 300, w: 912, h: 900 });
-  assert.equal(left.scale, 1.4);
+  // ...and a column too wide for the block's push caps the push, so the whole column (the command too) stays inside the
+  // margins, centred: tall, a 912 px column takes 1000 / 912, not 1.4.
+  const capped = RR.termPush(1080, 1920, { x: 84, y: 900, w: 600, h: 90 }, 1.4, { x: 84, y: 300, w: 912, h: 900 });
+  assert.ok(Math.abs(capped.scale - 1000 / 912) < 1e-9);
+  assert.ok(Math.abs(on(capped, 84, 0).x - 40) < 1e-6 && Math.abs(on(capped, 996, 0).x - 1040) < 1e-6, "column whole, centred");
+  // A column wider than the margins even at 1: no push, left edge 80 px in, the block still inside the margins.
+  const left = RR.termPush(1080, 1920, { x: 84, y: 900, w: 600, h: 90 }, 1.4, { x: 84, y: 300, w: 1100, h: 900 });
+  assert.equal(left.scale, 1);
   assert.ok(Math.abs(on(left, 84, 0).x - 80) < 1e-9);
   assert.ok(on(left, 684, 0).x <= 1040 + 1e-9);
   // A custom ceiling.
@@ -338,18 +345,23 @@ test("floods cover the frame: every zoom dot and disc reaches past the farthest 
   assert.equal((runtime.match(/dot\.setAttribute\("data-motion-blur", "off"\)/g) || []).length, 2);
 });
 
-test("terminal push: a long payoff line stays whole (the scale gives way), and below 1.15 the push is 1.15 on the column", () => {
+test("terminal push: a long payoff line and the command stay whole (the scale gives way to the widest text)", () => {
   const on = (p, x) => p.ox + p.tx + p.scale * (x - p.ox);
-  // Tall: "✓ dashboard ready at http://localhost:4173" (42 chars at 32 px, about 806 px) with a shorter highlight above.
+  // Tall: "✓ dashboard ready at http://localhost:4173" (42 chars at 32 px, about 806 px) with a shorter highlight above,
+  // in a 850 px column: the column's cap (1000 / 850) is the tighter one.
   const block = { x: 84, y: 700, w: 806, h: 300 };
-  const p = RR.termPush(1080, 1920, block, 1.4, { x: 84, y: 300, w: 912, h: 900 });
-  assert.ok(Math.abs(p.scale - 1000 / 806) < 1e-9);
-  assert.ok(on(p, 84) >= 40 - 1e-9 && on(p, 890) <= 1040 + 1e-9, "the payoff line is whole");
-  // A highlighted line as wide as the tall card's text (912 px): the cap (1.096) is under 1.15, so 1.15 on the column
-  // left-aligned 80 px in.
+  const p = RR.termPush(1080, 1920, block, 1.4, { x: 84, y: 300, w: 850, h: 900 });
+  assert.ok(Math.abs(p.scale - 1000 / 850) < 1e-9);
+  assert.ok(on(p, 84) >= 40 - 1e-6 && on(p, 934) <= 1040 + 1e-6, "the column (and so the payoff line) is whole");
+  // A short highlight under a long command (repoheat: 32 chars of output, a 30-char command at 44 px, about 845 px):
+  // the push stops where the command still fits.
+  const cmd = RR.termPush(1080, 1920, { x: 84, y: 700, w: 614, h: 44 }, 1.4, { x: 84, y: 300, w: 845, h: 600 });
+  assert.ok(Math.abs(cmd.scale - 1000 / 845) < 1e-9);
+  assert.ok(on(cmd, 84) >= 40 - 1e-6 && on(cmd, 929) <= 1040 + 1e-6, "the command is whole");
+  // A highlighted line as wide as the tall card's text (912 px): 1000 / 912, the whole column inside the margins.
   const wide = RR.termPush(1080, 1920, { x: 84, y: 700, w: 912, h: 80 }, 1.4, { x: 84, y: 300, w: 912, h: 900 });
-  assert.equal(wide.scale, 1.15);
-  assert.ok(Math.abs(on(wide, 84) - 80) < 1e-9);
+  assert.ok(Math.abs(wide.scale - 1000 / 912) < 1e-9);
+  assert.ok(on(wide, 84) >= 40 - 1e-6 && on(wide, 996) <= 1040 + 1e-6);
 });
 
 test("every zoom source dives a .cam inside a .cam-rig (never #root: its blur rimmed the flood), out of motion blur", () => {
@@ -358,4 +370,13 @@ test("every zoom source dives a .cam inside a .cam-rig (never #root: its blur ri
   }
   // ui's camera layer (.ui-move) is out of motion blur; its .cam opts out once its disc is on (runtime).
   assert.match(scene("ui.html"), /<div class="cam-rig"><div class="cam">/);
+});
+
+test("ui camera, tall: the caption view shows the whole box across the width, centred", () => {
+  const r = RR.cam.rect(tallG, { scale: 1, x: 0, y: 0 }, [80, 236, 960, 440]);
+  const last = RR.cam.focus(tallG, r, [], { top: 250, bottom: 1880 }).from;
+  const b = RR.cam.backShot(tallG, r, last, [], { top: 250, bottom: 1500 });
+  assert.ok(Math.abs(b.scale * r.w - (1080 - 2 * RR.cam.SAFE)) < 1e-6, "the box fills the width");
+  const left = b.x + b.scale * r.x, right = left + b.scale * r.w;
+  assert.ok(left >= RR.cam.SAFE - 1e-6 && right <= 1080 - RR.cam.SAFE + 1e-6, "and is whole");
 });

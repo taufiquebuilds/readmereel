@@ -10,17 +10,16 @@
     {
       "type": "hook",
       "lines": [
-        "Blue gradients.",
-        "Topic titles.",
-        "Every AI deck."
+        "AI decks:",
+        "blue gradients."
       ],
       "accentWords": [
-        "AI"
+        "gradients."
       ]
     },
     {
       "type": "title",
-      "promise": "Slides and charts that look designed by a person"
+      "promise": "Slides and charts that look human-made"
     },
     {
       "type": "ui",
@@ -51,12 +50,12 @@
       "items": [
         {
           "value": 41,
-          "label": "Example AI deck",
+          "label": "Sample AI deck",
           "note": "slop check, out of 100"
         },
         {
           "value": 100,
-          "label": "With nopurple",
+          "label": "Haiku, with nopurple",
           "note": "slop check, out of 100"
         }
       ]

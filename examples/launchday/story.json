@@ -18,7 +18,31 @@
     },
     {
       "type": "title",
-      "promise": "A launch plan you can run in an evening"
+      "promise": "A launch plan for one evening"
+    },
+    {
+      "type": "ui",
+      "image": "examples/launchday/social-preview.png",
+      "focus": [
+        {
+          "box": [
+            188,
+            78,
+            330,
+            34
+          ],
+          "label": "Launch readiness score"
+        },
+        {
+          "box": [
+            195,
+            150,
+            460,
+            40
+          ],
+          "label": "No demo in the first screen"
+        }
+      ]
     },
     {
       "type": "compare",
@@ -36,21 +60,6 @@
           "Install command near the top"
         ]
       }
-    },
-    {
-      "type": "counter",
-      "items": [
-        {
-          "value": 8,
-          "label": "Phases",
-          "note": "pitch to hand-off"
-        },
-        {
-          "value": 5,
-          "label": "Registries checked",
-          "note": "name collisions"
-        }
-      ]
     },
     {
       "type": "list",

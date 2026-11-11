@@ -9,11 +9,11 @@
     {
       "type": "hook",
       "lines": [
-        "77 stars this week.",
-        "You never noticed."
+        "77 new stars.",
+        "Unnoticed."
       ],
       "accentWords": [
-        "noticed."
+        "Unnoticed."
       ],
       "count": {
         "line": 0,
@@ -22,7 +22,7 @@
     },
     {
       "type": "title",
-      "promise": "See which of your repos are heating up"
+      "promise": "See which repos are heating up"
     },
     {
       "type": "terminal",

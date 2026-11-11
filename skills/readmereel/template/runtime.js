@@ -159,22 +159,26 @@ var RR = (function () {
   // ---------- terminal push (pure geometry) ----------
   // The terminal camera's push onto its focus block (the union of the highlighted lines' text): scale up to `max`
   // (1.4), capped so the whole block (every highlighted line, whole) stays inside the 40 px margins; the block's centre
-  // carried to the frame's middle down. Across, `column` (all the terminal's text, left-aligned) is centred when it
-  // fits at that scale; otherwise its left edge sits 80 px in, so only the tails of other lines crop. A block too wide
-  // for a 1.15 push (a long payoff line in tall) still gets 1.15, on the column left-aligned 80 px in.
+  // carried to the frame's middle down. The push is also capped so `column` (all the terminal's text, the command
+  // included) fits inside the margins: the command is never cut. Across, the column is centred; only a column wider
+  // than the margins at scale 1 (no push) sits with its left edge 80 px in.
   // Rects in frame px at identity.
   function termPush(W, H, block, max, column) {
     const SAFE = 40;
     const cap = Math.min(max || 1.4, (W - 2 * SAFE) / Math.max(1, block.w), (H - 2 * SAFE) / Math.max(1, block.h));
-    const scale = Math.max(cap, 1.15);
+    // Never so far that the text column (the command included) runs past the margins: a column wider than the frame's
+    // margins at 1 gets no push at all.
+    const colCap = column ? (W - 2 * SAFE) / Math.max(1, column.w) : Infinity;
+    const scale = Math.min(Math.max(cap, 1.15), Math.max(colCap, 1));
     const ox = block.x + block.w / 2, oy = block.y + block.h / 2;
     const on = (x) => ox + scale * (x - ox);
     const col = column || block;
     let tx;
-    if (cap < 1.15) tx = 2 * SAFE - on(col.x);
+    if (col.w * scale <= W - 2 * SAFE + 1e-6) tx = W / 2 - on(col.x + col.w / 2);
     else {
-      tx = col.w * scale <= W - 2 * SAFE ? W / 2 - on(col.x + col.w / 2) : 2 * SAFE - on(col.x);
-      tx = Math.min(Math.max(tx, SAFE - on(block.x)), W - SAFE - on(block.x + block.w));
+      // Only a column wider than the margins at scale 1 gets here: its left edge 80 px in, the block kept inside.
+      tx = 2 * SAFE - on(col.x);
+      if (cap >= 1.15) tx = Math.min(Math.max(tx, SAFE - on(block.x)), W - SAFE - on(block.x + block.w));
     }
     return { scale, ox, oy, tx, ty: H / 2 - oy };
   }
@@ -251,23 +255,30 @@ var RR = (function () {
       return { x: sh.x + best("x"), y: sh.y + best("y"), scale: s };
     }
     // The push to one focus box. Wide: the box fills at most 80% of the width and fits under the chip (scale 1.2 to
-    // 2.6), centred. Tall: framed by height (the box about half the frame); a box then wider than the frame is panned,
-    // from its left edge to its right edge, while it holds. band = { top, bottom }: where the box may sit.
+    // 2.6), centred. Tall: the box across the width, the window over at least 60% of the height; a box then wider than
+    // the frame is panned, from its left edge to its right edge, while it holds. band = { top, bottom }: where the box
+    // may sit.
     function focus(g, r, texts, band) {
       const room = band.bottom - band.top;
       if (g.wide) {
         const s = clamp(Math.min((0.8 * g.W) / r.w, (0.9 * room) / r.h), 1.2, 2.6);
         return { from: clean(g, shot(g, r, s, g.W / 2, g.H / 2, band.top, band.bottom), texts, r, band.top, band.bottom), to: null };
       }
-      const s = clamp(Math.min((0.5 * g.H) / r.h, (0.9 * room) / r.h), 1.2, 2.6);
+      // Tall: the box fills the 1080 px width, and the window covers at least 60% of the height (a frame that is
+      // mostly ground reads as empty); a box then wider than the frame is panned.
+      const fill = (g.W - 2 * SAFE) / r.w, body = (0.6 * g.H) / g.WH;
+      const s = clamp(Math.min(Math.max(fill, body), (0.9 * room) / r.h), 1.2, 2.6);
       const cy = (band.top + band.bottom) / 2;
       if (s * r.w <= g.W - 2 * SAFE) return { from: clean(g, shot(g, r, s, g.W / 2, cy, band.top, band.bottom), texts, r, band.top, band.bottom), to: null };
       const at = (cx) => clean(g, shot(g, r, s, cx, cy, band.top, band.bottom), texts, r, band.top, band.bottom);
       return { from: at(SAFE + (s * r.w) / 2), to: at(g.W - SAFE - (s * r.w) / 2) };
     }
-    // The caption view: 10% back from where the last push ended, the box lifted between the chip and the caption.
+    // The caption view: 10% back from where the last push ended (tall: the box across the width), the box lifted
+    // between the chip and the caption.
     function backShot(g, r, last, texts, band) {
-      const s = Math.max(1, Math.min(last.scale * 0.9, (0.95 * (band.bottom - band.top)) / r.h));
+      // Tall: the whole box across the width, centred (the caption view shows what acted, uncut).
+      const far = g.wide ? last.scale * 0.9 : (g.W - 2 * SAFE) / r.w;
+      const s = Math.max(1, Math.min(far, (0.95 * (band.bottom - band.top)) / r.h));
       const wider = s * r.w > g.W - 2 * SAFE;
       // Tall, still wider than the frame: stay on the side the pan ended on.
       const cx = !g.wide && wider ? g.W - SAFE - (s * r.w) / 2 : g.W / 2;
@@ -407,6 +418,7 @@ var RR = (function () {
           const dot = document.createElement("div");
           dot.className = "zoom-dot";
           dot.setAttribute("data-layout-ignore", "");
+        dot.setAttribute("data-layout-allow-occlusion", ""); // it covers the scene on purpose
           // A crisp disc: motion blur's capture of a fast-growing layer let parts of the screen show through it.
           dot.setAttribute("data-motion-blur", "off");
           Object.assign(dot.style, { position: "absolute", left: cx - r + "px", top: cy - r + "px", width: 2 * r + "px", height: 2 * r + "px", borderRadius: "50%", background: disc, opacity: "0", zIndex: "50", pointerEvents: "none" });
@@ -429,6 +441,7 @@ var RR = (function () {
         const dot = document.createElement("div");
         dot.className = "zoom-dot";
         dot.setAttribute("data-layout-ignore", "");
+        dot.setAttribute("data-layout-allow-occlusion", ""); // it covers the scene on purpose
         dot.setAttribute("data-motion-blur", "off");
         Object.assign(dot.style, { position: "absolute", left: cx - r + "px", top: cy - r + "px", width: 2 * r + "px", height: 2 * r + "px", borderRadius: "50%", background: D.nextGround, opacity: "0", zIndex: "50", pointerEvents: "none" });
         R.appendChild(dot);

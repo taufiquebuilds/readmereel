@@ -97,6 +97,9 @@ __RUNTIME__
   q(".counter-glow").style.background = "radial-gradient(900px 700px at " + c.x + "px " + c.y + "px, color-mix(in srgb, var(--accent) 15%, transparent), transparent 70%)";
   tl.fromTo(q(".counter-glow"), { opacity: 0 }, { opacity: 1, duration: 0.6, ease: "power1.out" }, 0)
     .fromTo(row, { scale: 1 }, { scale: 1.03, transformOrigin: origin, duration: Math.max(0.1, D.duration - 0.45 - starts[0]), ease: "power1.out" }, starts[0]);
+  // A zoom exit dives through the first figure (its box keeps its landed width), which grows as an accent disc.
+  figures[0].setAttribute("data-zoom-target", "");
+  figures[0].setAttribute("data-zoom-disc", D.data.accent);
   S.done();
 })();
 </script>

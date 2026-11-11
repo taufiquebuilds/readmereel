@@ -48,7 +48,11 @@ __RUNTIME__
         RR.roll(tl, num, 1, D.data.count.to, t, 0.45);
       }
     }
-    if (k < lines.length - 1) tl.to(el, { y: -travel, filter: "blur(18px)", duration: 0.2, ease: "power3.in" }, starts[k + 1] - 0.12);
+    // Whips up and off: a full frame height, then hidden, so no blurred sliver lingers at the top edge.
+    if (k < lines.length - 1) {
+      tl.to(el, { y: -H, filter: "blur(18px)", duration: 0.2, ease: "power3.in" }, starts[k + 1] - 0.12)
+        .set(el, { autoAlpha: 0 }, starts[k + 1] + 0.08);
+    }
   });
   lines.slice(1).forEach((el) => tl.set(el, { opacity: 0 }, 0));
   lines.at(-1).classList.add("hero");
